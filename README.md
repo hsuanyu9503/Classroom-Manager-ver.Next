@@ -1,6 +1,15 @@
 # Classroom Manager ver.Next
 
-Classroom Manager 的下一版網站。**開發中**：目前只有規格文件，還沒有網頁程式。
+Classroom Manager 的下一版網站。**開發中**：W1（點名名冊與請假更正）只在本機以虛構資料執行。
+
+```
+npm install
+npm test                                              # 本機代理的邊界測試
+npm run dev -- --upstream <class-management-next 1e20989 的 checkout> --scenario S-LEAVE-SC01
+npm run e2e -- --upstream <同上>                      # 端對端驗收
+```
+
+情境：`S-ROSTER-A17`、`S-LEAVE-SC01`、`S-DENY`。上游 checkout 需在 `poc/stage2` 執行過 `npm ci`。
 
 - 規格：`docs/SPEC.md`；設計：`docs/DESIGN.md`；目前狀態：`docs/HANDOFF.md`；開發守則：`CLAUDE.md`。
 - 第一批（W1）只用**虛構測資**，只連本機的 Firebase Emulator，**不部署**。

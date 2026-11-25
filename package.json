@@ -1,0 +1,16 @@
+{
+  "name": "classroom-manager-ver-next",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Classroom Manager ver.Next — W1 (fictional data, local emulators only, no deployment)",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "node --test test/proxy.test.mjs",
+    "dev": "node dev/launcher.mjs",
+    "e2e": "node test/run-e2e.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}
