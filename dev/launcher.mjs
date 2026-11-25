@@ -4,8 +4,15 @@
  *  1. the upstream checkout must be at the pinned commit with a clean poc/stage2;
  *  2. every emulator / API / proxy port must be confirmed closed;
  *  3. `firebase emulators:exec` runs dev/stack.mjs: a fresh fictional world, the upstream stack, the web proxy;
- *  4. after it stops, the ports are confirmed closed again. Reset = stop and start again. */
-import { spawn } from 'node:child_process';
+ *  4. after it stops, the ports are confirmed closed again. Reset = stop and start again.
+ *  Stopping (Linux, macOS, Windows): Ctrl+C, Ctrl+Break, SIGTERM, or typing q + Enter. The launcher first asks the
+ *  stack to stop through a STOP FILE (no signal needed, so it also works on Windows, which has no POSIX process
+ *  groups). The stack also stops by itself if the launcher is killed abruptly (it watches the launcher's PID).
+ *  If the stack does not end in time, the launcher escalates: POSIX → SIGINT, then SIGKILL to the whole process
+ *  group; Windows → `taskkill /T /F` on the process tree. A forced stop is reported and exits 3. */
+import { spawn, spawnSync } from 'node:child_process';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import os from 'node:os';
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,10 +21,6 @@ import { SCENARIOS } from './world.mjs';
 
 const arg = (n) => { const i = process.argv.indexOf(n); return i > 0 ? process.argv[i + 1] : null; };
 const scenario = arg('--scenario'); const upstream = arg('--upstream') ? path.resolve(arg('--upstream')) : null;
-// The stop path (signal to the whole process group, then ports confirmed closed) is verified on Linux only.
-// Windows has no POSIX process groups or SIGINT forwarding of this kind: refuse instead of leaving emulators running.
-if (process.platform === 'win32') { console.log('REFUSED: the W1 launcher stop path is not verified on Windows (no POSIX process groups). Use Linux, or WSL, for now.'); process.exit(2); }
-if (process.platform !== 'linux') console.log(`NOTE: the launcher stop path is verified on Linux only; on ${process.platform} confirm after stopping that ports ${[...UPSTREAM_PORTS, WEB_PORT].join(', ')} are closed.`);
 if (!Object.hasOwn(SCENARIOS, scenario || '') || !upstream) { console.log(`usage: node dev/launcher.mjs --upstream <path> --scenario <${Object.keys(SCENARIOS).join('|')}>`); process.exit(2); }
 try {
   const u = checkUpstream(upstream);
@@ -25,16 +28,37 @@ try {
   const { cleanEnv } = await importUpstream(u.stage2, 'src/orchestrator.mjs');
   const { PROJECT_ID } = await importUpstream(u.stage2, 'src/local-guard.mjs');
   const stackJs = path.join(path.dirname(fileURLToPath(import.meta.url)), 'stack.mjs');
-  const env = cleanEnv(process.env, { RUN_NONCE: randomBytes(16).toString('hex'), CMN_UPSTREAM_STAGE2: u.stage2, CMN_SCENARIO: scenario, CMN_WEB_PORT: String(WEB_PORT) });
-  // own process group: a stop signal reaches firebase, its shell, the stack and the emulators together (like Ctrl+C in a terminal)
-  const child = spawn(process.execPath, [u.firebaseJs, 'emulators:exec', '--only', 'auth,firestore', '--project', PROJECT_ID, `node "${stackJs}"`], { cwd: u.stage2, env, stdio: 'inherit', detached: true });
-  const forward = (sig) => { try { process.kill(-child.pid, sig); } catch { child.kill(sig); } };
-  process.on('SIGINT', () => forward('SIGINT')); process.on('SIGTERM', () => forward('SIGTERM'));
-  const code = await new Promise((r) => child.on('exit', (c) => r(c ?? 1)));
-  // the stack may need a moment to notice its parent is gone; then every port must be confirmed closed
+  const ctl = mkdtempSync(path.join(os.tmpdir(), 'cmn-w1-ctl-')); const stopFile = path.join(ctl, 'stop');
+  const env = cleanEnv(process.env, { RUN_NONCE: randomBytes(16).toString('hex'), CMN_UPSTREAM_STAGE2: u.stage2, CMN_SCENARIO: scenario, CMN_WEB_PORT: String(WEB_PORT), CMN_STOP_FILE: stopFile, CMN_LAUNCHER_PID: String(process.pid) });
+  const win = process.platform === 'win32';
+  // POSIX: own process group, so an escalation reaches firebase, its shell, the stack and the emulators together
+  const child = spawn(process.execPath, [u.firebaseJs, 'emulators:exec', '--only', 'auth,firestore', '--project', PROJECT_ID, `node "${stackJs}"`], { cwd: u.stage2, env, stdio: ['ignore', 'inherit', 'inherit'], detached: !win, windowsHide: true });
+  let exited = false; let forced = null; let requested = false;
+  const exitP = new Promise((r) => child.on('exit', (c) => { exited = true; r(c ?? 1); }));
+  const group = (sig) => { try { process.kill(-child.pid, sig); } catch { try { child.kill(sig); } catch { /* gone */ } } };
+  const requestStop = (why) => {
+    if (requested) return; requested = true;
+    console.log(`launcher: stop requested (${why})`);
+    try { writeFileSync(stopFile, why); } catch { /* the escalation below still applies */ }
+    setTimeout(() => { if (!exited) { forced = 'interrupt'; if (!win) group('SIGINT'); } }, 20000).unref();
+    setTimeout(() => {
+      if (exited) return; forced = 'kill';
+      if (win) spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' }); else group('SIGKILL');
+    }, 40000).unref();
+  };
+  for (const sig of ['SIGINT', 'SIGTERM', 'SIGBREAK']) { try { process.on(sig, () => requestStop(sig)); } catch { /* not available */ } }
+  // typing q + Enter also stops (stdin closing does NOT stop: it may be closed from the start)
+  process.stdin.setEncoding('utf8');
+  process.stdin.on('data', (d) => { if (/^\s*q\s*$/im.test(d)) requestStop('q'); });
+  process.stdin.on('error', () => {});
+  const code = await exitP;
+  process.stdin.pause(); process.stdin.unref?.();
+  rmSync(ctl, { recursive: true, force: true });
+  // the emulators may need a moment to release their ports; then every port must be confirmed closed
   let lastErr = null;
-  for (let i = 0; i < 30; i += 1) { try { await requirePortsClosed(u.stage2, [...UPSTREAM_PORTS, WEB_PORT]); lastErr = null; break; } catch (e) { lastErr = e; await new Promise((r) => setTimeout(r, 500)); } }
+  for (let i = 0; i < 60; i += 1) { try { await requirePortsClosed(u.stage2, [...UPSTREAM_PORTS, WEB_PORT]); lastErr = null; break; } catch (e) { lastErr = e; await new Promise((r) => setTimeout(r, 500)); } }
   if (lastErr) throw lastErr;
+  if (forced) { console.log(`stopped by FORCE (${forced}; exit ${code}); ports confirmed closed`); process.exit(3); }
   console.log(`stopped (exit ${code}); ports confirmed closed`);
   process.exit(code);
 } catch (e) {

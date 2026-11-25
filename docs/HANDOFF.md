@@ -2,12 +2,36 @@
 
 ## 目前狀態（2026-11-25）
 
-- 目前任務：**W1 實作**（分支 `claude/w1-impl`，L3 PR #2）。ChatGPT 第一輪審查（Reviewed Head `895e988`）：WEB2-REV-001、002（P2）需修正。**R1 複審（Reviewed Head `b7458ad`）：兩項都已關閉，沒有新的阻擋項**，可以交負責人決定合併。這個結論只限 Linux、本機 Emulator、虛構資料、W1，不是部署、真實資料或原生 Windows 的驗收。PR #1（文件）已由負責人核准合併，`main` `307682e`。
+- **W1 已合併**：PR #2 由負責人核准，`main` `e11651d`。ChatGPT R1 複審（Reviewed Head `b7458ad`）關閉 WEB2-REV-001／002。
+- 目前任務：**Windows 的啟動與停止驗證**（負責人指示，分支 `claude/w1-windows-launcher`）。詳見下方「Windows 啟動器」。
 - 上游：受控 API 固定為 `class-management-next` `1e20989`（SPEC §3）；啟動器拒絕其他版本或 `poc/stage2` 有未提交修改的 checkout。
 - 內容：
   - `web/`：P1 點名名冊（摘要＋明細）、P2 請假紀錄與「更正為全天」、P4 送出結果（SPEC §4 狀態機）、確認對話框；
   - `dev/`：開發用本機代理（SPEC §3 邊界）、上游檢查、情境世界、啟動器（`npm run dev -- --upstream <path> --scenario <S>`）；
-  - `test/`：代理邊界單元測試（`npm test`）、端對端驗收（`npm run e2e -- --upstream <path>`）。
+  - `test/`：代理邊界單元測試（`npm test`）、端對端驗收（`npm run e2e -- --upstream <path>`）、啟動器生命週期（`npm run launcher:test -- --upstream <path>`）。
+
+## Windows 啟動器（分支 `claude/w1-windows-launcher`）
+
+- **問題**：停止的方法原本依賴 POSIX 的程序群組與訊號，Windows 沒有這種機制，所以先前原生 Windows 直接拒絕啟動。
+- **作法**：停止改用兩個**不需要訊號**、各平台都能用的通道，並保留訊號作為補充：
+  1. **停止檔**：啟動器收到 Ctrl+C、Ctrl+Break、SIGTERM，或使用者輸入 `q` + Enter 時，建立一個暫存的停止檔；stack 每 0.3 秒檢查，看到就走正常的停止流程（關閉代理與上游 stack、清除自己擁有的 Emulator 資料）。stack 結束後，`emulators:exec` 自己關閉 Emulator。
+  2. **啟動器存活監看**：stack 監看啟動器的 PID；啟動器被直接終止時，stack 自己停止，不會留下仍在監聽的程序。
+  3. **升級**：20 秒內沒有結束時，POSIX 送 SIGINT 給整個程序群組；40 秒時，POSIX 送 SIGKILL 給群組、Windows 用 `taskkill /T /F` 終止程序樹。強制停止會明確顯示 `stopped by FORCE` 並 exit 3，不算成功。
+- 原生 Windows 的拒絕已移除。
+- 驗證步驟：`docs/WINDOWS.md`。
+
+**測試結果**
+
+- **已通過：作者執行**（Linux 雲端環境，Node 22.23.5）
+  - `npm run launcher:test`：4/4。A 用 `q` + Enter，走停止檔通道；B 直接終止啟動器（SIGKILL），走存活監看；C 用 SIGINT；最後確認所有 port 都已關閉。三個案例執行中都確認首頁 200、路徑變體 404。A、B 用的正是 Windows 依靠的兩個通道。
+  - Mutation：停用存活監看後，B 失敗，9 個 port 在 90 秒後仍然開著，證明測試能抓到殘留。之後已清除殘留程序。
+  - `npm test`：12/12。
+- **未執行**
+  - **Windows 上的任何執行**：A、B、Ctrl+C，`cmd.exe` 對 `node "<path>"` 的引號處理，`taskkill` 升級；
+  - macOS、WSL；
+  - 升級（FORCE）路徑：Linux 上也沒有觸發。
+- **只經人工檢視**：`docs/WINDOWS.md` 的步驟。
+- **沒有重跑**：E2E。E2E 不使用 launcher／stack，`world.mjs`、頁面、代理都沒有改。
 
 ## W1 實作的待審事項（ChatGPT 第一輪已答覆）
 
@@ -16,7 +40,7 @@
 | W1-Q1 | P／R／N／U 在規格中沒有中文名稱 | 頁面直接顯示代碼；摘要另列「已到（P+R）」「已登記（P+R+N）」 | 可接受；名稱待負責人決定，不自行猜 |
 | W1-Q2 | 目標 ID 寫在 `web/app.js` 的 `TARGETS` | 情境設定，不是測資；都是上游 Stage 1 的虛構 ID | 可接受；`/scenario.json` 已明列在 SPEC §3 |
 | W1-Q3 | 色彩 | `web/tokens.css` 的**暫定**值，頁首標示「暫定色票」 | 可接受；正式色票仍待 Q-2，未完成正式視覺驗收 |
-| W1-Q4 | 啟動器 | **只供開發**；以程序群組停止，結束後確認 port 已關閉 | 可接受；**不等於**跨平台已驗證。Windows 現在明確拒絕啟動，其他非 Linux 平台會提示 |
+| W1-Q4 | 啟動器 | **只供開發**；以程序群組停止，結束後確認 port 已關閉 | 可接受；**不等於**跨平台已驗證。PR #2 當時：Windows 明確拒絕啟動。之後的變更見上方「Windows 啟動器」 |
 
 ## 第一輪審查的修正（2026-11-25）
 
@@ -55,7 +79,7 @@
 
 **未執行**
 
-- Windows、macOS、WSL 的啟動器與 E2E。原生 Windows 會**拒絕啟動**（R1 由審查者確認）：這是揭露平台限制，**不是**完成 Windows 支援。如果要讓負責人在 Windows 上直接看網站，要先安排相容的啟動與停止驗證，或確認可用的 Linux／WSL 環境；
+- （PR #2 當時）Windows、macOS、WSL 的啟動器與 E2E。原生 Windows 會**拒絕啟動**（R1 由審查者確認）：這是揭露平台限制，**不是**完成 Windows 支援。如果要讓負責人在 Windows 上直接看網站，要先安排相容的啟動與停止驗證，或確認可用的 Linux／WSL 環境；
 - Firefox、WebKit；實體手機、平板與螢幕閱讀器；
 - `denied`、`invalid`、`error` 三個送出狀態沒有在 E2E 中觸發（標籤只經人工檢視原始碼）；
 - 上游需要 Emulator 的套件（`s2:cases`、`s2:b3`、`s2:b4`）：依 SPEC §6.1 第 4 點不例行執行；
@@ -109,3 +133,5 @@
 | 2026-11-25 | Claude → ChatGPT | 修正 WEB2-REV-001、002；代理測試 12/12、E2E 18/18；兩項修正都以舊程式重現失敗 |
 | 2026-11-25 | ChatGPT → Claude | PR #2 R1（Reviewed Head `b7458ad`）：WEB2-REV-001、002 關閉；可以交負責人決定合併。備註：舊 proxy 的 mutation 紀錄不完整、原生 Windows 只是拒絕、`denied`／`invalid`／`error` 沒有觸發 |
 | 2026-11-25 | Claude | 只更新 HANDOFF（記錄 R1 結果；重新取得單次的舊 proxy mutation 紀錄）。程式與測試和 `b7458ad` 相同 |
+| 2026-11-25 | 負責人 → Claude | 合併 PR #2（`e11651d`）；補上 Windows 的啟動與停止驗證；上游文件開 PR（class-management-next #23） |
+| 2026-11-25 | Claude | Windows 啟動器：停止檔與存活監看；`launcher:test`（Linux 4/4，含 mutation）；`docs/WINDOWS.md`。**Windows 上尚未執行** |
