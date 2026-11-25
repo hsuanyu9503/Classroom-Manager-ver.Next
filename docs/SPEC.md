@@ -221,7 +221,7 @@ POC-002（沒有權限與不存在的回應相同）只是**參考案例**：本
    - 上游 PR #21（實作 B4 的受控寫入 API）：
      - ChatGPT 的 R1 複審通過（Reviewed Head `f9097dd`，最後受保護版本 `971a7d3`）；
      - 作者在本機 Linux 的回歸：`check`、`npm test` 20/20、`stage1:all`、`s2:test` 198/198、`s2:cases`、`s2:b3` 37/37、`s2:b4` 29/29；
-     - 合併 commit `1e20989` 的 CI：`validate` 與 `baseline-anchor` 都 success；
+     - 合併 commit `1e20989` 的 CI（push 到 main，run 45349503385）：success；
      - 證據紀錄在上游的 [`docs/stage2/S2B2-B4-REPORT.md`](https://github.com/hsuanyu9503/class-management-next/blob/754e3a1c0ec674e57ff36d4af7b45b959f448e5b/docs/stage2/S2B2-B4-REPORT.md) §10～§12。
    - 合併後的 hosted 執行（POC-016／017／018／021）與 ChatGPT 的原檔重播：四項 `MATCH`，結果 `UNATTESTED [TRUST_ROOT_NOT_CONFIGURED]`（同一份報告 §12）。
    - 沿用範圍**只限**：固定版本的受控 API 本身的行為與判定。
