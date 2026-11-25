@@ -102,6 +102,8 @@ POC-002（沒有權限與不存在的回應相同）只是**參考案例**：本
 - **所有請求**：`Host` 必須是 `127.0.0.1:<port>` 或 `localhost:<port>`，用來防止 DNS rebinding；不符就回 403。
 - **靜態檔案的 `GET`／`HEAD`**（v0.4 分開規定）：
   - 只提供本 repository 中允許清單上的靜態檔案（例如 `/`、`/index.html`、`/style.css`、`/app.js`）；不在清單中就 404；
+  - 另有一個唯讀的設定端點 `/scenario.json`：只回傳目前的情境代碼（例如 `{"scenario":"S-LEAVE-SC01"}`），**不含** token、身分或測試資料；它不提供切換身分或情境的功能（WEB2-REV Q2）；
+  - 路徑以**原始的 request-target 精確比對**，不先做 URL 正規化：dot-segment、fragment、query、absolute-form、編碼變體都不符合，一律 404（WEB2-REV-001；API 的三條路徑同樣適用）；
   - **允許正常的頂層導航**：使用者直接在網址列輸入或開啟書籤時，瀏覽器送出的 `Sec-Fetch-Site` 是 `none`（[W3C Fetch Metadata §2.3](https://w3c.github.io/webappsec-fetch-metadata/#sec-fetch-site-header)），這種請求要正常回應。不對靜態 `GET` 套用 API 的同源限制；
   - 靜態回應**不含** token 或任何測試資料，也**不會**觸發任何 API 呼叫或寫入；
   - 不轉送給 upstream。

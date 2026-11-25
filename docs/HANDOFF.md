@@ -2,51 +2,62 @@
 
 ## 目前狀態（2026-11-25）
 
-- 目前任務：**W1 實作**（分支 `claude/w1-impl`，L3 PR，待 ChatGPT 審查）。PR #1（文件）已由負責人核准合併，`main` `307682e`。
+- 目前任務：**W1 實作**（分支 `claude/w1-impl`，L3 PR #2）。ChatGPT 第一輪審查（Reviewed Head `895e988`）：WEB2-REV-001、002（P2）需修正；本輪已修正，待複審。PR #1（文件）已由負責人核准合併，`main` `307682e`。
 - 上游：受控 API 固定為 `class-management-next` `1e20989`（SPEC §3）；啟動器拒絕其他版本或 `poc/stage2` 有未提交修改的 checkout。
 - 內容：
   - `web/`：P1 點名名冊（摘要＋明細）、P2 請假紀錄與「更正為全天」、P4 送出結果（SPEC §4 狀態機）、確認對話框；
   - `dev/`：開發用本機代理（SPEC §3 邊界）、上游檢查、情境世界、啟動器（`npm run dev -- --upstream <path> --scenario <S>`）；
   - `test/`：代理邊界單元測試（`npm test`）、端對端驗收（`npm run e2e -- --upstream <path>`）。
 
-## W1 實作的待審事項（請 ChatGPT／負責人確認）
+## W1 實作的待審事項（ChatGPT 第一輪已答覆）
 
-| # | 事項 | 目前作法 |
-|---|---|---|
-| W1-Q1 | P／R／N／U 在規格中沒有中文名稱 | 頁面直接顯示代碼；摘要另列「已到（P+R）」「已登記（P+R+N）」。名稱待負責人決定，不自行命名 |
-| W1-Q2 | 目標 ID（點名場次、請假紀錄 LV-007、範圍）寫在 `web/app.js` 的 `TARGETS` | 視為**情境設定**，不是測資；都是上游 Stage 1 的虛構 ID。`/scenario.json` 只回傳情境代碼，不含 token |
-| W1-Q3 | 色彩 | 仍是 `web/tokens.css` 的**暫定**值（Starter Kit 範例），頁首標示「暫定色票」；正式色票待 Q-2 |
-| W1-Q4 | 啟動器 | **只供開發**：以獨立程序群組啟動 `firebase emulators:exec`，停止訊號送給整個群組，結束後確認所有 port 已關閉；不是產品功能 |
+| # | 事項 | 目前作法 | 審查答覆 |
+|---|---|---|---|
+| W1-Q1 | P／R／N／U 在規格中沒有中文名稱 | 頁面直接顯示代碼；摘要另列「已到（P+R）」「已登記（P+R+N）」 | 可接受；名稱待負責人決定，不自行猜 |
+| W1-Q2 | 目標 ID 寫在 `web/app.js` 的 `TARGETS` | 情境設定，不是測資；都是上游 Stage 1 的虛構 ID | 可接受；`/scenario.json` 已明列在 SPEC §3 |
+| W1-Q3 | 色彩 | `web/tokens.css` 的**暫定**值，頁首標示「暫定色票」 | 可接受；正式色票仍待 Q-2，未完成正式視覺驗收 |
+| W1-Q4 | 啟動器 | **只供開發**；以程序群組停止，結束後確認 port 已關閉 | 可接受；**不等於**跨平台已驗證。Windows 現在明確拒絕啟動，其他非 Linux 平台會提示 |
 
-## W1 測試結果（2026-11-25）
+## 第一輪審查的修正（2026-11-25）
 
-**已通過（本輪在 Linux 雲端環境執行；Node 22.23.5、firebase-tools 15.35.0、Playwright 1.63.0 Chromium）**
+| 編號 | 問題 | 修正 | 新增的測試 |
+|---|---|---|---|
+| WEB2-REV-001（P2） | 代理先以 `new URL()` 正規化再比對路徑；`/extra/../v1/read`、`#fragment`、absolute-form 會被轉送；`http://[` 造成未捕捉的例外 | 以**原始 request-target 精確比對**允許清單，不解析 URL；處理器的例外回應受控的 500；格式錯誤的 HTTP 回應 400 只關閉該連線；Origin 改為字串精確比對 | `proxy.test.mjs` 新增 3 項：12 種 API 路徑變體、7 種靜態路徑變體、5 種格式錯誤的 target（POST／GET）之後服務仍正常 |
+| WEB2-REV-002（P2） | 衝突後仍保留舊的請假紀錄，「更正為全天」會重新啟用 | 衝突時丟棄舊紀錄並標示「以上內容已不是最新，請先重新讀取」；衝突狀態下不能更正；只有讀取成功才恢復 | E2E item 9b：衝突後、重新讀取之前，以及重新讀取 503、403 之後，按鈕都停用；**強制啟用並點擊**也不開對話框；沒有新的 operationId 或 commit |
+| 補強建議 | item 1 只比對算式；狀態標籤只搜尋原始碼 | item 1 改由上游權威狀態算出 P/R/N/U 與每列（座號、狀態）再比較；狀態標籤改由實際呈現的 DOM 判定，只聲明本輪到達的狀態 | — |
 
-- `npm test`：代理邊界 9/9。
-- `npm run e2e`：17/17。內容：SPEC §6 的 11 項驗收；四種尺寸（390×844、820×1180、1440×900、1024×768）不水平溢出、文字區塊不塌縮；鍵盤；`prefers-reduced-motion`；每個送出狀態都有文字標籤。結果 JSON 與截圖在 `test-results/`（不提交，附在審查包）。
-- 啟動器：啟動 `S-DENY` 後首頁回傳 200；只對啟動器送出 SIGINT 後，輸出「stopped (exit 0); ports confirmed closed」。
-- SPEC §6.1 第 4 點的上游煙霧檢查（固定版本 `1e20989` 的 checkout）：`npm run check` 通過、`npm test` 20/20、`npm run stage1:all` 通過（Postgres 仍是 `NOT_RUN`）、`s2:test` 198/198；執行後工作區仍乾淨。
+**修正有效的證據**（作者在本輪執行）：
+
+- 新的代理測試對 `895e988` 的舊 `proxy.mjs`：路徑變體的 2 項失敗，格式錯誤的那項讓測試程序停住不回應（重現審查者的 `ERR_INVALID_URL`）。
+- 新的 E2E 對 `895e988` 的舊 `app.js`：item 9b 失敗（`forcedOpened=true`、commits 2→3、opIds 2→3），在真實瀏覽器與 Emulator 中重現了繞過。
+
+## W1 測試結果
+
+**已通過：作者執行**（Linux 雲端環境；Node 22.23.5、firebase-tools 15.35.0、Playwright 1.63.0 Chromium）
+
+- 第二輪（修正後）：
+  - `npm test`：代理測試 12/12；
+  - `npm run e2e`：18/18；
+  - 啟動器（`S-LEAVE-SC01`）：首頁 200；`/extra/../v1/read` 回應 404；SIGINT 後 ports confirmed closed。
+- 第一輪（`895e988`）：
+  - 代理測試 9/9；E2E 17/17；啟動器停止測試；
+  - SPEC §6.1 第 4 點的上游煙霧檢查（固定版本 `1e20989`）：`check` 通過、`npm test` 20/20、`stage1:all` 通過（Postgres 仍是 `NOT_RUN`）、`s2:test` 198/198；工作區仍乾淨。上游沒有改變，本輪沒有重跑。
+
+**審查者執行**（ChatGPT 第一輪，Windows／Node 26）：`895e988` 的代理測試 9/9；另以自己的探測腳本發現 WEB2-REV-001。審查者沒有重跑完整的 Emulator E2E、啟動器或上游套件。
 
 **沿用的既有證據**（不是本輪重跑）：見 SPEC §6.1 第 2 點。
 
 **未執行**
 
-- Windows、macOS 的啟動器與 E2E；Firefox、WebKit；
-- 實體手機、平板與螢幕閱讀器；
+- Windows、macOS 的啟動器與 E2E。Windows 的拒絕訊息**只經人工檢視**，沒有在 Windows 上執行；
+- Firefox、WebKit；實體手機、平板與螢幕閱讀器；
+- `denied`、`invalid`、`error` 三個送出狀態沒有在 E2E 中觸發（標籤只經人工檢視原始碼）；
 - 上游需要 Emulator 的套件（`s2:cases`、`s2:b3`、`s2:b4`）：依 SPEC §6.1 第 4 點不例行執行；
 - CI：本 repository 還沒有 CI。
 
 **只經人工檢視**
 
 - 截圖中的版面與視覺（DESIGN §7）。
-
-## 待決事項
-
-| # | 事項 | 負責 |
-|---|---|---|
-| Q-1 | 既有網站的基準：**已決定**（2026-11-25）＝`Homework-manager-` `cdaf91e`，只參考功能 | — |
-| Q-2 | 正式色票（沒有已驗收的色票；既有網站的色彩依指示不沿用） | 負責人 |
-| Q-3 | 本 repository 的 Settings：**負責人已設定（2026-11-25）**，Claude 以公開 API 核對，見下方 | — |
 
 ## Settings 核對結果（2026-11-25，Claude 以未認證的 GitHub API 讀取）
 
@@ -88,3 +99,5 @@
 | 2026-11-25 | Claude | 完成上述非阻擋整理（DESIGN D0.3）。**目前沒有 CI**（check-runs 是 0），不寫成 CI 通過 |
 | 2026-11-25 | 負責人 → Claude | 合併 PR #1，開始實作 W1 |
 | 2026-11-25 | Claude → ChatGPT | W1 實作 PR（L3）：網頁、本機代理、啟動器、代理測試、E2E 17/17；待審事項 W1-Q1～Q4 |
+| 2026-11-25 | ChatGPT → Claude | PR #2 第一輪（Reviewed Head `895e988`）：WEB2-REV-001、002（P2）；Q1～Q4 答覆；測試補強建議 |
+| 2026-11-25 | Claude → ChatGPT | 修正 WEB2-REV-001、002；代理測試 12/12、E2E 18/18；兩項修正都以舊程式重現失敗 |

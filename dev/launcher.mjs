@@ -14,6 +14,10 @@ import { SCENARIOS } from './world.mjs';
 
 const arg = (n) => { const i = process.argv.indexOf(n); return i > 0 ? process.argv[i + 1] : null; };
 const scenario = arg('--scenario'); const upstream = arg('--upstream') ? path.resolve(arg('--upstream')) : null;
+// The stop path (signal to the whole process group, then ports confirmed closed) is verified on Linux only.
+// Windows has no POSIX process groups or SIGINT forwarding of this kind: refuse instead of leaving emulators running.
+if (process.platform === 'win32') { console.log('REFUSED: the W1 launcher stop path is not verified on Windows (no POSIX process groups). Use Linux, or WSL, for now.'); process.exit(2); }
+if (process.platform !== 'linux') console.log(`NOTE: the launcher stop path is verified on Linux only; on ${process.platform} confirm after stopping that ports ${[...UPSTREAM_PORTS, WEB_PORT].join(', ')} are closed.`);
 if (!Object.hasOwn(SCENARIOS, scenario || '') || !upstream) { console.log(`usage: node dev/launcher.mjs --upstream <path> --scenario <${Object.keys(SCENARIOS).join('|')}>`); process.exit(2); }
 try {
   const u = checkUpstream(upstream);

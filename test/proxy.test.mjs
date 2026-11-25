@@ -90,3 +90,42 @@ test('the upstream is fixed: a non-loopback upstream is refused at construction'
   assert.throws(() => createWebProxy({ port: 0, upstream: 'http://example.com:80', token: 't', scenario: 's', webRoot: WEB, staticFiles: {} }));
   assert.throws(() => createWebProxy({ port: 0, upstream: `http://127.0.0.1:${upPort}`, token: '', scenario: 's', webRoot: WEB, staticFiles: {} }));
 });
+
+/* WEB2-REV-001: the RAW request-target must match exactly; URL normalisation must never let a variant through,
+   and a malformed target must not end the process. Sent over a raw TCP socket so nothing rewrites the target. */
+import net from 'node:net';
+function rawTarget(method, target, { body = '{}', headers = {} } = {}) {
+  return new Promise((resolve) => {
+    const h = { host: `127.0.0.1:${port}`, origin: ORIGIN(), 'content-type': 'application/json', 'content-length': String(Buffer.byteLength(body)), connection: 'close', ...headers };
+    const sock = net.connect(port, '127.0.0.1', () => sock.write(`${method} ${target} HTTP/1.1\r\n${Object.entries(h).map(([k, v]) => `${k}: ${v}`).join('\r\n')}\r\n\r\n${method === 'POST' ? body : ''}`));
+    let s = ''; sock.on('data', (d) => { s += d; }); sock.on('close', () => resolve(Number((s.match(/^HTTP\/1\.1 (\d{3})/) || [])[1] || 0)));
+    sock.on('error', () => resolve(0));
+  });
+}
+const VARIANTS = ['/extra/../v1/read', '/v1/./read', '/v1/read#ignored', '/v1/read?x=1', 'http://different.example/v1/read', `http://127.0.0.1:${'PORT'}/v1/read`, '//v1/read', '/v1/read/', '/V1/READ', '/v1/%72ead', '/v1%2fread', '*'];
+test('WEB2-REV-001: API path variants (dot-segment, fragment, query, absolute-form, encodings…) → 404, nothing forwarded', async () => {
+  const n = seen.length;
+  for (const v of VARIANTS) {
+    const t = v.replace('PORT', String(port));
+    const st = await rawTarget('POST', t);
+    assert.ok(st === 404 || st === 400, `${t} → ${st}`);
+  }
+  assert.equal(seen.length, n, 'nothing forwarded');
+  assert.equal(await rawTarget('POST', '/v1/read'), 200, 'the exact path still works');
+  assert.equal(seen.length, n + 1);
+});
+test('WEB2-REV-001: static path variants → 404 (exact allow-list)', async () => {
+  for (const t of ['/x/../index.html', '/index.html#a', '/index.html?a=1', '/./app.js', `http://127.0.0.1:${port}/app.js`, '//app.js', '/APP.JS']) {
+    const st = await rawTarget('GET', t); assert.ok(st === 404 || st === 400, `${t} → ${st}`);
+  }
+  assert.equal(await rawTarget('GET', '/app.js'), 200);
+});
+test('WEB2-REV-001: malformed request-targets get a controlled answer and the proxy keeps serving', async () => {
+  const n = seen.length;
+  for (const t of ['http://[', 'http://[/v1/read', '%', '/v1/read%', '/%zz']) {
+    for (const m of ['POST', 'GET']) { const st = await rawTarget(m, t); assert.ok([400, 404].includes(st), `${m} ${t} → ${st}`); }
+  }
+  assert.equal(seen.length, n);
+  assert.equal(await rawTarget('GET', '/'), 200, 'still serving static');
+  assert.equal(await rawTarget('POST', '/v1/read'), 200, 'still serving the API');
+});

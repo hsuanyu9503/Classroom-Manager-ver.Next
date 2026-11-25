@@ -74,7 +74,13 @@
     body.replaceChildren(dl);
     updateReviseButton();
   }
-  const canRevise = () => !!leave && (leave.coverageSegments || []).length === 1 && leave.coverageSegments[0].dayPart === 'AM' && op === null && state !== 'sending';
+  /** After a conflict the shown record is outdated: drop it (so nothing can be frozen from it) and say so. Only a
+   *  successful loadLeave() sets `leave` again; a failed or refused re-read leaves it null. */
+  function markLeaveStale() {
+    leave = null;
+    $('p2Body').append(el('p', { className: 'stale', textContent: '以上內容已不是最新，請先重新讀取。' }));
+  }
+  const canRevise = () => !!leave && (leave.coverageSegments || []).length === 1 && leave.coverageSegments[0].dayPart === 'AM' && op === null && state !== 'sending' && state !== 'conflict';
   function updateReviseButton() { $('reviseButton').disabled = !canRevise(); }
 
   /* ---------------- P3 confirm → freeze → send */
@@ -110,7 +116,9 @@
     if (r.status === 200 && code === 'OK' && r.body.receipt && r.body.receipt.operationId === op.operationId) return finishDone(r.body.receipt);
     if (r.status === 409 && code === 'VERSION_CONFLICT') {
       // the receipt is checked first in the same transaction (upstream S2B1-AUTHORIZATION §8): this operation did NOT write
-      op = null; state = 'conflict'; render(); return;
+      // the leave record shown is now stale: it must NOT be usable for a new operation until a fresh read
+      // succeeds (WEB2-REV-002; SPEC §4 「重新讀取、顯示最新內容後才重新確認」)
+      op = null; state = 'conflict'; markLeaveStale(); render(); return;
     }
     if (r.status === 409 && code === 'OPERATION_REUSE_MISMATCH') { state = 'error'; render(); return; }   // keep op; never auto-retry
     if (r.status === 403) {

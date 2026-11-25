@@ -24,11 +24,15 @@ const up = await openUpstream(process.env.CMN_UPSTREAM_STAGE2);
 const results = []; const log = (ok, name, detail = '') => { results.push({ name, ok, detail }); console.log(`${ok ? 'OK  ' : 'FAIL'} ${name}${detail ? ' — ' + detail : ''}`); };
 
 /* ---------------- test-only fault proxy: web proxy → [fault] → upstream front proxy */
-const fault = { dropCommit: 0, receipt: null, seen: [] };
+const fault = { dropCommit: 0, receipt: null, read: null, seen: [] };
 const faultServer = http.createServer((req, res) => {
   const chunks = []; req.on('data', (c) => chunks.push(c));
   req.on('end', async () => {
     fault.seen.push(req.url);
+    if (req.url === '/v1/read' && fault.read) {
+      const [status, code] = fault.read === '403' ? [403, 'FORBIDDEN'] : [503, 'UNAVAILABLE'];
+      res.writeHead(status, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ code, traceId: 'TR-injected-by-test' }));
+    }
     if (req.url === '/v1/receipt' && fault.receipt) {
       if (fault.receipt === 'drop') return req.socket.destroy();
       const [status, code] = fault.receipt === '403' ? [403, 'FORBIDDEN'] : [503, 'UNAVAILABLE'];
@@ -48,7 +52,7 @@ const browser = await chromium.launch();
 let current = null;
 async function scenario(name, { viaFault = false } = {}) {
   if (current) await current.stop();
-  fault.dropCommit = 0; fault.receipt = null; fault.seen = [];
+  fault.dropCommit = 0; fault.receipt = null; fault.read = null; fault.seen = [];
   current = await startScenario(up, { scenario: name, webPort: WEB_PORT, upstreamOverride: viaFault ? `http://127.0.0.1:${FAULT_PORT}` : null });
   return current;
 }
@@ -69,6 +73,23 @@ const statusOf = (page) => page.locator('#statusRegion').getAttribute('data-stat
 const waitState = (page, ...states) => page.waitForFunction((st) => st.includes(document.getElementById('statusRegion').dataset.state), states, { timeout: 30000 });
 async function confirmRevision(page) { await page.click('#reviseButton'); await page.locator('#confirmDialog[open]').waitFor(); await page.click('#confirmButton'); }
 const leaveText = (page) => page.locator('#p2Body').innerText();
+/** status label as RENDERED in the DOM for the state the page is in (recorded for the label check at the end) */
+const labelsSeen = {};
+async function recordLabel(page) {
+  const st = await statusOf(page);
+  const tag = await page.locator('#statusRegion .tag').first().innerText().catch(() => null);
+  const visible = await page.locator('#p4').isVisible();
+  (labelsSeen[st] ||= []).push({ tag, visible });
+}
+/** forcibly enable 更正為全天 and click it: the page logic itself must refuse to open the dialog */
+async function forcedRevise(page) {
+  await page.evaluate(() => { const b = document.getElementById('reviseButton'); b.disabled = false; b.click(); });
+  await page.waitForTimeout(300);
+  const opened = await page.evaluate(() => document.getElementById('confirmDialog').open);
+  if (opened) await page.evaluate(() => document.getElementById('confirmButton').click());   // would freeze + send
+  await page.waitForTimeout(300);
+  return opened;
+}
 const overflow = (page) => page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
 
 try {
@@ -81,8 +102,18 @@ try {
     const docs = await state();
     const ws = name === 'S-ROSTER-A17' ? 'WS-A17' : 'WS-SC01';
     const stateEntries = Object.keys(docs).filter((k) => k.startsWith(`workspaces/${ws}/`) && /\/entries\/[^/]+$/.test(k));
-    const ok = c.total === c.P + c.R + c.N + c.U && c.arrived === c.P + c.R && c.registered === c.P + c.R + c.N && rows === n && c.total === stateEntries.length;
-    log(ok, `item 1 ${name}: summary consistent (T=P+R+N+U, 已到=P+R, 已登記=P+R+N), rows=${n}, equals state of ${ws} only`, JSON.stringify(c) + ` rows=${rows} stateEntries=${stateEntries.length}`);
+    // expected values from the AUTHORITATIVE upstream state (session rosterSnapshot + entries), not from the page
+    const sid = name === 'S-ROSTER-A17' ? 'AS-A17-20261117-DAILY' : 'AS-SC01-20261116-DAILY';
+    const sesKey = Object.keys(docs).find((k) => k.startsWith(`workspaces/${ws}/`) && k.endsWith(`/attendanceSessions/${sid}`));
+    const sesDoc = sesKey ? docs[sesKey] : null;
+    const seatOf = new Map((sesDoc?.rosterSnapshot || []).map((r) => [r.enrollmentId, r.seatNo]));
+    const ents = Object.entries(docs).filter(([k]) => sesKey && k.startsWith(`${sesKey}/entries/`) && !k.slice(sesKey.length + 9).includes('/')).map(([, v]) => v);
+    const exp = { P: 0, R: 0, N: 0, U: 0 }; for (const e of ents) exp[e.status] += 1;
+    const expected = { ...exp, total: ents.length, arrived: exp.P + exp.R, registered: exp.P + exp.R + exp.N };
+    const expRows = ents.map((e) => [String(seatOf.get(e.enrollmentId) ?? '—'), e.status]).sort((a, b) => Number(a[0]) - Number(b[0]));
+    const uiRows = await page.locator('table.roster tbody tr').evaluateAll((trs) => trs.map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent)));
+    const ok = JSON.stringify(c) === JSON.stringify(expected) && rows === n && ents.length === n && stateEntries.length === n && JSON.stringify(uiRows) === JSON.stringify(expRows);
+    log(ok, `item 1 ${name}: P/R/N/U, 合計, 已到, 已登記 and every row (座號, 狀態) equal the authoritative ${ws} state; rows=${n}, only ${ws}`, `ui=${JSON.stringify(c)} expected=${JSON.stringify(expected)} rowsEqual=${JSON.stringify(uiRows) === JSON.stringify(expRows)}`);
     await ctx.close();
   }
 
@@ -104,6 +135,7 @@ try {
     for (const p of [a.page, b.page]) { await p.click('#reviseButton'); await p.locator('#confirmDialog[open]').waitFor(); }
     await Promise.all([a.page.click('#confirmButton'), b.page.click('#confirmButton')]);
     await waitState(a.page, 'done', 'conflict'); await waitState(b.page, 'done', 'conflict');
+    await recordLabel(a.page); await recordLabel(b.page);
     const st = [await statusOf(a.page), await statusOf(b.page)].sort();
     const docs = await state();
     log(JSON.stringify(st) === JSON.stringify(['conflict', 'done']) && revisions(docs).length === 1, 'item 3: two tabs confirm at once → exactly one 完成 and one 衝突; one revision (no silent overwrite)', `states=${st} revisions=${revisions(docs).length}`);
@@ -117,13 +149,41 @@ try {
     await a.ctx.close(); await b.ctx.close();
   }
 
+  /* ---------- item 9b (WEB2-REV-002): after a conflict, NO new operation before a successful fresh read —
+     not by forcing the button, not after a failed (503) or refused (403) re-read */
+  {
+    const s = await scenario('S-LEAVE-SC01', { viaFault: true }); const a = await openPage(s); const b = await openPage(s); await waitLeaveLoaded(a.page); await waitLeaveLoaded(b.page);
+    await confirmRevision(a.page); await waitState(a.page, 'done');                 // a wins at v5 → v6
+    await confirmRevision(b.page); await waitState(b.page, 'conflict');             // b still holds v5 → conflict
+    const c0 = frontCommits(s).length; const o0 = opIdsOf(s).size;
+    const staleShown = (await leaveText(b.page)).includes('以上內容已不是最新');
+    const disabled0 = await b.page.locator('#reviseButton').isDisabled();
+    const forced0 = await forcedRevise(b.page);
+    fault.read = '503';
+    await b.page.getByRole('button', { name: '重新讀取' }).click();
+    await b.page.waitForFunction(() => document.getElementById('p2Body').innerText.includes('目前無法讀取'));
+    const disabled1 = await b.page.locator('#reviseButton').isDisabled(); const forced1 = await forcedRevise(b.page);
+    fault.read = '403';
+    await b.page.getByRole('button', { name: '重試' }).click();
+    await b.page.waitForFunction(() => document.getElementById('p2Body').innerText.includes('無法存取'));
+    const disabled2 = await b.page.locator('#reviseButton').isDisabled(); const forced2 = await forcedRevise(b.page);
+    fault.read = null;
+    await b.page.reload(); await waitLeaveLoaded(b.page);
+    const fresh = await leaveText(b.page);
+    const docs = await state();
+    const ok = staleShown && disabled0 && !forced0 && disabled1 && !forced1 && disabled2 && !forced2 && frontCommits(s).length === c0 && opIdsOf(s).size === o0 && c0 === 2 && revisions(docs).length === 1 && fresh.includes('全天') && fresh.includes('v6');
+    log(ok, 'item 9b: after a conflict and BEFORE a successful re-read (also after a 503 or 403 re-read) 更正為全天 stays disabled; forcing it opens no dialog; no new operationId, no new commit',
+      `stale=${staleShown} disabled=${disabled0}/${disabled1}/${disabled2} forcedOpened=${forced0}/${forced1}/${forced2} commits ${c0}→${frontCommits(s).length} opIds ${o0}→${opIdsOf(s).size}`);
+    await a.ctx.close(); await b.ctx.close();
+  }
+
   /* ---------- item 4: double activation → one modification, one operationId */
   {
     const s = await scenario('S-LEAVE-SC01'); const { ctx, page } = await openPage(s); await waitLeaveLoaded(page);
     await page.click('#reviseButton'); await page.locator('#confirmDialog[open]').waitFor();
     await page.locator('#confirmButton').dblclick({ force: true }).catch(() => {});
     await page.keyboard.press('Enter').catch(() => {});
-    await waitState(page, 'done');
+    await waitState(page, 'done'); await recordLabel(page);
     await page.waitForTimeout(500);
     const docs = await state();
     log(revisions(docs).length === 1 && frontCommits(s).length === 1 && opIdsOf(s).size === 1, 'item 4: double click + Enter on confirm → one commit request, one operationId, one revision', `commits=${frontCommits(s).length} opIds=${opIdsOf(s).size} revisions=${revisions(docs).length}`);
@@ -135,7 +195,7 @@ try {
     const s = await scenario('S-LEAVE-SC01', { viaFault: true }); const { ctx, page } = await openPage(s); await waitLeaveLoaded(page);
     fault.dropCommit = 1;
     await confirmRevision(page); await waitState(page, 'unknown');
-    const unknownText = await page.locator('#statusRegion').innerText();
+    const unknownText = await page.locator('#statusRegion').innerText(); await recordLabel(page);
     await page.screenshot({ path: path.join(OUT, 'screens', 'state-unknown-1440.png'), fullPage: true });
     const opId = [...opIdsOf(s)][0];
     await page.getByRole('button', { name: '查詢結果' }).click(); await waitState(page, 'done');
@@ -191,7 +251,7 @@ try {
     fault.dropCommit = 1;
     await confirmRevision(page); await waitState(page, 'unknown');
     await up.h.patchDoc(`authBindings/${s.users['ACTOR-SC01-TEACHER'].uid}`, { status: 'disabled' });
-    await page.getByRole('button', { name: '重新送出同一操作' }).click(); await waitState(page, 'unknownDenied');
+    await page.getByRole('button', { name: '重新送出同一操作' }).click(); await waitState(page, 'unknownDenied'); await recordLabel(page);
     const text = await page.locator('#statusRegion').innerText();
     const docs = await state();
     await page.screenshot({ path: path.join(OUT, 'screens', 'state-unknown-denied-1440.png'), fullPage: true });
@@ -267,10 +327,10 @@ try {
     await ctx2.close();
   }
   {
-    // status labels are text, not colour only, for every state reached above (done / conflict / unknown / unknownDenied / denied)
+    // judged from the RENDERED DOM recorded above, for the states this run actually reached (not from the source text)
     const labels = { done: '完成', conflict: '衝突', unknown: '尚未確認', unknownDenied: '尚未確認' };
-    const ok = Object.values(labels).every((l) => readFileSync(path.join(HERE, '..', 'web', 'app.js'), 'utf8').includes(`'${l}'`));
-    log(ok, 'every submission state has a text label (完成／衝突／尚未確認／無法存取), colour only as support');
+    const ok = Object.entries(labels).every(([st, l]) => (labelsSeen[st] || []).length > 0 && labelsSeen[st].every((x) => x.visible && x.tag === l));
+    log(ok, 'rendered text label for each reached state: done=完成, conflict=衝突, unknown=尚未確認, unknownDenied=尚未確認 (denied/invalid/error not reached in this run)', JSON.stringify(labelsSeen));
   }
 } catch (e) {
   log(false, 'E2E aborted', e.stack.split('\n').slice(0, 4).join(' | '));

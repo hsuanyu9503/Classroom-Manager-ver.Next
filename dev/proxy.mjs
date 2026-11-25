@@ -7,7 +7,10 @@
  *    present and equal this proxy's own origin; Sec-Fetch-Site, when present, must be same-origin → else 403, nothing
  *    forwarded. The page's own Authorization header is dropped; the proxy adds the scenario actor's token, which exists
  *    only in this process's memory (the page never receives it).
- *  - Everything else: 404, nothing forwarded. No CORS headers are ever sent.
+ *  - Paths are matched on the RAW request-target, exactly (WEB2-REV-001): no URL parsing or normalisation, so
+ *    dot-segments, fragments, absolute-form, query strings, encodings etc. never match → 404, nothing forwarded.
+ *  - Everything else: 404, nothing forwarded. No CORS headers are ever sent. A failure inside the handler answers a
+ *    controlled 500 (static) / 502 (API) and never ends the process.
  *  The upstream is fixed at construction time; no request can choose a destination. */
 import http from 'node:http';
 import { readFileSync } from 'node:fs';
@@ -45,21 +48,25 @@ export function createWebProxy({ port, upstream, token, scenario, webRoot, stati
   };
   const reject = (res, status) => { stats.rejected += 1; send(res, status, JSON.stringify({ code: status === 404 ? 'NOT_FOUND' : 'FORBIDDEN' })); };
 
-  server = http.createServer((req, res) => {
+  const handle = (req, res) => {
     const host = req.headers.host || '';
     if (!hosts().has(host)) return reject(res, 403);
-    const url = new URL(req.url, 'http://x');
-    const p = url.pathname;
+    // RAW request-target, compared exactly against the allow-lists; never parsed (WEB2-REV-001)
+    const target = req.url;
     if (req.method === 'GET' || req.method === 'HEAD') {
       const head = req.method === 'HEAD';
-      if (p === '/scenario.json') return send(res, 200, JSON.stringify({ scenario }), 'application/json; charset=utf-8', head);
-      if (!files.has(p)) return reject(res, 404);
-      const f = files.get(p);
-      return send(res, 200, readFileSync(f), STATIC_TYPES[path.extname(f)] || 'application/octet-stream', head);
+      if (target === '/scenario.json') return send(res, 200, JSON.stringify({ scenario }), 'application/json; charset=utf-8', head);
+      if (!files.has(target)) return reject(res, 404);
+      const f = files.get(target);
+      let data;
+      try { data = readFileSync(f); } catch { return send(res, 500, JSON.stringify({ code: 'INTERNAL' })); }
+      return send(res, 200, data, STATIC_TYPES[path.extname(f)] || 'application/octet-stream', head);
     }
-    if (req.method !== 'POST' || !API_PATHS.includes(p) || url.search) return reject(res, 404);
+    if (req.method !== 'POST' || !API_PATHS.includes(target)) return reject(res, 404);
+    const p = target;
     const origin = req.headers.origin;
-    if (typeof origin !== 'string' || !origins().has(origin) || new URL(origin).host !== host) return reject(res, 403);
+    // exact string comparison only: the Origin must be this proxy's origin with the SAME host as the Host header
+    if (typeof origin !== 'string' || !origins().has(origin) || origin !== `http://${host}`) return reject(res, 403);
     const sfs = req.headers['sec-fetch-site'];
     if (sfs !== undefined && sfs !== 'same-origin') return reject(res, 403);
     const ct = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
@@ -83,7 +90,15 @@ export function createWebProxy({ port, upstream, token, scenario, webRoot, stati
     });
     req.on('error', () => {});
     return undefined;
+  };
+  server = http.createServer((req, res) => {
+    try { handle(req, res); } catch {
+      stats.rejected += 1;
+      if (!res.headersSent) send(res, 500, JSON.stringify({ code: 'INTERNAL' })); else res.destroy();
+    }
   });
+  // malformed HTTP from a client: answer 400 and close that socket only
+  server.on('clientError', (_e, socket) => { if (socket.writable) socket.end('HTTP/1.1 400 Bad Request\r\nconnection: close\r\ncontent-length: 0\r\n\r\n'); else socket.destroy(); });
   return {
     stats,
     listen: () => new Promise((resolve, reject2) => { server.once('error', reject2); server.listen(port, '127.0.0.1', () => { boundPort = server.address().port; resolve(boundPort); }); }),
