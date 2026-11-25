@@ -208,8 +208,39 @@ POC-002（沒有權限與不存在的回應相同）只是**參考案例**：本
 **測試**：
 - 端對端測試（Playwright，本機 Emulator 與受控 API），涵蓋上述 11 項，加上 §3 本機代理的邊界測試：其他路徑、其他方法、錯誤的 `Host`、不符的 `Origin`、頁面自帶的 `Authorization` 都會被拒絕或丟棄；
 - 三種寬度的截圖；
-- 本 repository 的測試全部通過；對接的上游版本固定，不修改上游程式；
+- 本 repository 的測試全部通過；
+- 上游的回歸，依 §6.1 的證據沿用安排處理；
 - 結果分成「已通過／未執行／只經人工檢視」。
+
+### 6.1 上游回歸的證據沿用安排（相對 v0.4 的**調整**，WEB-REV-001）
+
+上游 v0.4 §4 的原文是：「既有的 `check`、`npm test`、`stage1:all`、Stage 2 測試全部回歸」。本 repository **不是**原樣承接這一句，而是改為以下安排：
+
+1. **理由**：本 repository 不修改上游的任何程式；對接的受控 API 固定在上游 `1e20989`（§3），啟動器會拒絕其他版本或有未提交修改的工作區。上游的測試對象沒有改變。
+2. **沿用的既有證據**（**不是**本 repository 重新執行的結果）：
+   - 上游 PR #21（實作 B4 的受控寫入 API）：
+     - ChatGPT 的 R1 複審通過（Reviewed Head `f9097dd`，最後受保護版本 `971a7d3`）；
+     - 作者在本機 Linux 的回歸：`check`、`npm test` 20/20、`stage1:all`、`s2:test` 198/198、`s2:cases`、`s2:b3` 37/37、`s2:b4` 29/29；
+     - 合併 commit `1e20989` 的 CI：`validate` 與 `baseline-anchor` 都 success；
+     - 證據紀錄在上游的 [`docs/stage2/S2B2-B4-REPORT.md`](https://github.com/hsuanyu9503/class-management-next/blob/754e3a1c0ec674e57ff36d4af7b45b959f448e5b/docs/stage2/S2B2-B4-REPORT.md) §10～§12。
+   - 合併後的 hosted 執行（POC-016／017／018／021）與 ChatGPT 的原檔重播：四項 `MATCH`，結果 `UNATTESTED [TRUST_ROOT_NOT_CONFIGURED]`（同一份報告 §12）。
+   - 沿用範圍**只限**：固定版本的受控 API 本身的行為與判定。
+3. **一定要在本 repository 實際測試**（不能用上面的證據代替）：
+   - §6 的 11 項端對端驗收；
+   - §3 本機代理的邊界測試；
+   - 開發用啟動器與上游 harness 的整合：版本檢查、乾淨工作區檢查、port 檢查、三個情境的建立與停止；
+   - 三種寬度的截圖與 `docs/DESIGN.md` 的視覺驗收。
+4. **啟動器整合時的上游煙霧檢查**：
+   - 每次在新的環境第一次整合啟動器時，先在固定版本的上游 checkout 中執行 `npm run check`、`npm test`、`npm run stage1:all`、`npm run s2:test`（不需要 Emulator），確認該環境下的上游狀態與既有證據一致。
+   - 結果記入本 repository 的 PR，標示為「本輪在 ○○ 環境執行」，並與上面沿用的證據分開寫。
+   - 需要 Emulator 或沙箱的上游套件（`s2:cases`、`s2:b3`、`s2:b4`）**不**列為例行執行；觸發條件見第 5 點。
+5. **需要重新評估回歸範圍的情況**：
+   - 換到上游的其他版本；
+   - 上游的 API 契約、授權規格或資料模型改變；
+   - Node.js、firebase-tools、Emulator 的版本改變；
+   - 啟動器開始依賴上游中原本沒有使用的部分。
+   - 出現任何一種，都要在 PR 中列出「哪些上游測試需要重跑、由誰在哪裡執行」，送審後才使用新的組合。
+6. 不得把沿用的既有結果寫成本輪重新執行。
 
 ## 7. 技術（D-W7、D-W8）
 
