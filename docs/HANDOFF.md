@@ -2,18 +2,68 @@
 
 ## 目前狀態（2026-11-25）
 
-- 目前任務：**W1 文件**（PR #1 文件審查通過，Reviewed Head `9b268c2`，待負責人決定合併）：建立本 repository 的 `CLAUDE.md`、`docs/SPEC.md`、`docs/DESIGN.md`，承接上游的 [`WEB-B1-PROPOSAL.md` v0.4](https://github.com/hsuanyu9503/class-management-next/blob/754e3a1c0ec674e57ff36d4af7b45b959f448e5b/docs/WEB-B1-PROPOSAL.md)。
-- 基準：`main` `10670e7`（只有 `README`）。
-- **還沒有任何網頁程式**。文件審查通過、負責人核准之後，才實作 W1。
-- 上游：`hsuanyu9503/class-management-next` main `754e3a1`；受控 API 固定為 `1e20989`（SPEC §3）。
+- 目前任務：**W1 實作**（分支 `claude/w1-impl`，L3 PR #2）。ChatGPT 第一輪審查（Reviewed Head `895e988`）：WEB2-REV-001、002（P2）需修正。**R1 複審（Reviewed Head `b7458ad`）：兩項都已關閉，沒有新的阻擋項**，可以交負責人決定合併。這個結論只限 Linux、本機 Emulator、虛構資料、W1，不是部署、真實資料或原生 Windows 的驗收。PR #1（文件）已由負責人核准合併，`main` `307682e`。
+- 上游：受控 API 固定為 `class-management-next` `1e20989`（SPEC §3）；啟動器拒絕其他版本或 `poc/stage2` 有未提交修改的 checkout。
+- 內容：
+  - `web/`：P1 點名名冊（摘要＋明細）、P2 請假紀錄與「更正為全天」、P4 送出結果（SPEC §4 狀態機）、確認對話框；
+  - `dev/`：開發用本機代理（SPEC §3 邊界）、上游檢查、情境世界、啟動器（`npm run dev -- --upstream <path> --scenario <S>`）；
+  - `test/`：代理邊界單元測試（`npm test`）、端對端驗收（`npm run e2e -- --upstream <path>`）。
 
-## 待決事項
+## W1 實作的待審事項（ChatGPT 第一輪已答覆）
 
-| # | 事項 | 負責 |
-|---|---|---|
-| Q-1 | 既有網站的基準：**已決定**（2026-11-25）＝`Homework-manager-` `cdaf91e`，只參考功能 | — |
-| Q-2 | 正式色票（沒有已驗收的色票；既有網站的色彩依指示不沿用） | 負責人 |
-| Q-3 | 本 repository 的 Settings：**負責人已設定（2026-11-25）**，Claude 以公開 API 核對，見下方 | — |
+| # | 事項 | 目前作法 | 審查答覆 |
+|---|---|---|---|
+| W1-Q1 | P／R／N／U 在規格中沒有中文名稱 | 頁面直接顯示代碼；摘要另列「已到（P+R）」「已登記（P+R+N）」 | 可接受；名稱待負責人決定，不自行猜 |
+| W1-Q2 | 目標 ID 寫在 `web/app.js` 的 `TARGETS` | 情境設定，不是測資；都是上游 Stage 1 的虛構 ID | 可接受；`/scenario.json` 已明列在 SPEC §3 |
+| W1-Q3 | 色彩 | `web/tokens.css` 的**暫定**值，頁首標示「暫定色票」 | 可接受；正式色票仍待 Q-2，未完成正式視覺驗收 |
+| W1-Q4 | 啟動器 | **只供開發**；以程序群組停止，結束後確認 port 已關閉 | 可接受；**不等於**跨平台已驗證。Windows 現在明確拒絕啟動，其他非 Linux 平台會提示 |
+
+## 第一輪審查的修正（2026-11-25）
+
+| 編號 | 問題 | 修正 | 新增的測試 |
+|---|---|---|---|
+| WEB2-REV-001（P2，**R1 已關閉**） | 代理先以 `new URL()` 正規化再比對路徑；`/extra/../v1/read`、`#fragment`、absolute-form 會被轉送；`http://[` 造成未捕捉的例外 | 以**原始 request-target 精確比對**允許清單，不解析 URL；處理器的例外回應受控的 500；格式錯誤的 HTTP 回應 400 只關閉該連線；Origin 改為字串精確比對 | `proxy.test.mjs` 新增 3 項：12 種 API 路徑變體、7 種靜態路徑變體、5 種格式錯誤的 target（POST／GET）之後服務仍正常 |
+| WEB2-REV-002（P2，**R1 已關閉**） | 衝突後仍保留舊的請假紀錄，「更正為全天」會重新啟用 | 衝突時丟棄舊紀錄並標示「以上內容已不是最新，請先重新讀取」；衝突狀態下不能更正；只有讀取成功才恢復 | E2E item 9b：衝突後、重新讀取之前，以及重新讀取 503、403 之後，按鈕都停用；**強制啟用並點擊**也不開對話框；沒有新的 operationId 或 commit |
+| 補強建議 | item 1 只比對算式；狀態標籤只搜尋原始碼 | item 1 改由上游權威狀態算出 P/R/N/U 與每列（座號、狀態）再比較；狀態標籤改由實際呈現的 DOM 判定，只聲明本輪到達的狀態 | — |
+
+**修正有效的證據**（作者在本輪執行）：
+
+- 新的代理測試對 `895e988` 的舊 `proxy.mjs`：路徑變體的 2 項失敗，格式錯誤的那項讓測試程序停住不回應。
+  - **R1 審查備註**：複審包中的 `mutation/proxy-tests-on-old-proxy.log` 混雜了兩次執行（舊 proxy 的失敗，加上還原後的 12 pass），**不能**當作完整的 mutation 紀錄。
+  - R1 之後重新取得單次紀錄：舊 `proxy.mjs`（`895e988`）搭配 `b7458ad` 的測試，在獨立目錄中執行，加上 60 秒逾時。結果：1～9 通過，10、11 失敗，12 沒有結果，以逾時結束（exit 124）。這只證明新測試能辨識舊缺陷，不是「mutation 全數驗證通過」。
+- 新的 E2E 對 `895e988` 的舊 `app.js`：item 9b 失敗（`forcedOpened=true`、commits 2→3、opIds 2→3），在真實瀏覽器與 Emulator 中重現了繞過。
+
+## W1 測試結果
+
+**已通過：作者執行**（Linux 雲端環境；Node 22.23.5、firebase-tools 15.35.0、Playwright 1.63.0 Chromium）
+
+- 第二輪（修正後）：
+  - `npm test`：代理測試 12/12；
+  - `npm run e2e`：18/18；
+  - 啟動器（`S-LEAVE-SC01`）：首頁 200；`/extra/../v1/read` 回應 404；SIGINT 後 ports confirmed closed。
+- 第一輪（`895e988`）：
+  - 代理測試 9/9；E2E 17/17；啟動器停止測試；
+  - SPEC §6.1 第 4 點的上游煙霧檢查（固定版本 `1e20989`）：`check` 通過、`npm test` 20/20、`stage1:all` 通過（Postgres 仍是 `NOT_RUN`）、`s2:test` 198/198；工作區仍乾淨。上游沒有改變，本輪沒有重跑。
+
+**審查者執行**（ChatGPT，Windows／Node 26）：
+
+- 第一輪：`895e988` 的代理測試 9/9；另以自己的探測腳本發現 WEB2-REV-001。
+- R1：`b7458ad` 的代理測試 12/12；在原生 Windows 執行啟動器，確認輸出 REFUSED 並 exit 2，沒有進入上游的啟動流程。
+- 兩輪都沒有重跑完整的 Emulator E2E、Linux 的啟動器停止測試或上游套件。
+
+**沿用的既有證據**（不是本輪重跑）：見 SPEC §6.1 第 2 點。
+
+**未執行**
+
+- Windows、macOS、WSL 的啟動器與 E2E。原生 Windows 會**拒絕啟動**（R1 由審查者確認）：這是揭露平台限制，**不是**完成 Windows 支援。如果要讓負責人在 Windows 上直接看網站，要先安排相容的啟動與停止驗證，或確認可用的 Linux／WSL 環境；
+- Firefox、WebKit；實體手機、平板與螢幕閱讀器；
+- `denied`、`invalid`、`error` 三個送出狀態沒有在 E2E 中觸發（標籤只經人工檢視原始碼）；
+- 上游需要 Emulator 的套件（`s2:cases`、`s2:b3`、`s2:b4`）：依 SPEC §6.1 第 4 點不例行執行；
+- CI：本 repository 還沒有 CI。
+
+**只經人工檢視**
+
+- 截圖中的版面與視覺（DESIGN §7）。
 
 ## Settings 核對結果（2026-11-25，Claude 以未認證的 GitHub API 讀取）
 
@@ -53,3 +103,9 @@
 | 2026-11-25 | ChatGPT → Claude | PR #1 R1（Reviewed Head `a6e24c4`，已包含 DESIGN D0.2）：WEB-REV-001 關閉，文件草案審查通過 |
 | 2026-11-25 | ChatGPT → Claude | PR #1 R2（Reviewed Head `9b268c2`）：維持通過，沒有新的阻擋項；可以交負責人決定合併。非阻擋整理：平板驗收尺寸、SPEC 引用 §7、範本預設與已審查要求分開、日期選擇的範圍、HANDOFF 的 ruleset 欄位、審查歷程、PR 描述 |
 | 2026-11-25 | Claude | 完成上述非阻擋整理（DESIGN D0.3）。**目前沒有 CI**（check-runs 是 0），不寫成 CI 通過 |
+| 2026-11-25 | 負責人 → Claude | 合併 PR #1，開始實作 W1 |
+| 2026-11-25 | Claude → ChatGPT | W1 實作 PR（L3）：網頁、本機代理、啟動器、代理測試、E2E 17/17；待審事項 W1-Q1～Q4 |
+| 2026-11-25 | ChatGPT → Claude | PR #2 第一輪（Reviewed Head `895e988`）：WEB2-REV-001、002（P2）；Q1～Q4 答覆；測試補強建議 |
+| 2026-11-25 | Claude → ChatGPT | 修正 WEB2-REV-001、002；代理測試 12/12、E2E 18/18；兩項修正都以舊程式重現失敗 |
+| 2026-11-25 | ChatGPT → Claude | PR #2 R1（Reviewed Head `b7458ad`）：WEB2-REV-001、002 關閉；可以交負責人決定合併。備註：舊 proxy 的 mutation 紀錄不完整、原生 Windows 只是拒絕、`denied`／`invalid`／`error` 沒有觸發 |
+| 2026-11-25 | Claude | 只更新 HANDOFF（記錄 R1 結果；重新取得單次的舊 proxy mutation 紀錄）。程式與測試和 `b7458ad` 相同 |

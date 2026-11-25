@@ -1,0 +1,18 @@
+/* W1 design tokens (DESIGN §2). ALL values are PROVISIONAL, not a decision: Q-2 (official palette) is open.
+   The four marked values are the upstream Starter Kit demo defaults; the rest are neutral placeholders.
+   Change colours ONLY in this file. */
+:root {
+  --color-primary: #2D5F76;   /* Starter Kit demo default */
+  --color-bg: #F7F8FA;        /* Starter Kit demo default */
+  --color-text: #19232A;      /* Starter Kit demo default */
+  --radius: 14px;             /* Starter Kit demo default */
+  --color-surface: #FFFFFF;
+  --color-muted: #4A5560;
+  --color-line: #D5DAE0;
+  --color-on-primary: #FFFFFF;
+  --color-status-done: #1E6B45;
+  --color-status-conflict: #8A4B00;
+  --color-status-unknown: #8A4B00;
+  --color-status-denied: #9B1C2E;
+  --focus-ring: 3px solid #1A4FA0;
+}

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Classroom Manager ver.Next｜W1</title>
+  <link rel="stylesheet" href="/tokens.css">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <h1>Classroom Manager ver.Next</h1>
+    <p class="scenario-banner" id="scenarioBanner" role="note">測試情境：讀取中…｜虛構資料｜暫定色票</p>
+  </header>
+  <main class="container">
+    <section class="card" aria-labelledby="p1Title" id="p1">
+      <h2 id="p1Title">點名名冊與點名摘要</h2>
+      <label class="field">日期
+        <select id="sessionSelect" aria-describedby="sessionHint"></select>
+      </label>
+      <p class="muted" id="sessionHint">只能選固定測資中已有的點名場次。</p>
+      <div id="p1Body" aria-live="polite"></div>
+    </section>
+
+    <section class="card" aria-labelledby="p2Title" id="p2" hidden>
+      <h2 id="p2Title">請假摘要</h2>
+      <div id="p2Body" aria-live="polite"></div>
+      <div class="actions">
+        <button type="button" class="primary" id="reviseButton" disabled>更正為全天</button>
+      </div>
+    </section>
+
+    <section class="card status-card" id="p4" aria-labelledby="p4Title" hidden>
+      <h2 id="p4Title">送出結果</h2>
+      <div id="statusRegion" role="status" aria-live="polite"></div>
+      <div class="actions" id="statusActions"></div>
+    </section>
+  </main>
+
+  <dialog id="confirmDialog" aria-labelledby="confirmTitle">
+    <h2 id="confirmTitle">確認更正</h2>
+    <p id="confirmText"></p>
+    <div class="actions">
+      <button type="button" class="primary" id="confirmButton">確認更正</button>
+      <button type="button" id="cancelButton">返回</button>
+    </div>
+  </dialog>
+</body>
+</html>
