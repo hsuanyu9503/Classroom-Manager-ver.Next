@@ -278,4 +278,4 @@ POC-002（沒有權限與不存在的回應相同）只是**參考案例**：本
 |---|---|---|
 | Q-1 | 既有網站的基準 | **已決定**（2026-11-25）：`Homework-manager-` `cdaf91e`，只參考功能，見 §8 |
 | Q-2 | 正式色票：沒有已驗收的色票，暫用上游範本的示範預設值，見 `docs/DESIGN.md` §1～§2 | 待負責人決定 |
-| Q-3 | 本 repository 的 Settings：分支保護、Actions 權限、Pages 關閉 | 負責人設定，見 `docs/HANDOFF.md` |
+| Q-3 | 本 repository 的 Settings：分支保護、Actions 權限、Pages 關閉 | **已設定**（2026-11-25），核對結果見 `docs/HANDOFF.md` |

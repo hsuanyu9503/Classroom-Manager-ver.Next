@@ -13,7 +13,20 @@
 |---|---|---|
 | Q-1 | 既有網站的基準：**已決定**（2026-11-25）＝`Homework-manager-` `cdaf91e`，只參考功能 | — |
 | Q-2 | 正式色票（沒有已驗收的色票；既有網站的色彩依指示不沿用） | 負責人 |
-| Q-3 | 本 repository 的 Settings（見下方建議） | 負責人 |
+| Q-3 | 本 repository 的 Settings：**負責人已設定（2026-11-25）**，Claude 以公開 API 核對，見下方 | — |
+
+## Settings 核對結果（2026-11-25，Claude 以未認證的 GitHub API 讀取）
+
+| 項目 | 結果 | 依據 |
+|---|---|---|
+| Ruleset `protect-main`（id 28037705） | `enforcement: active`；目標 `~DEFAULT_BRANCH`（`main`）；**bypass 名單是空的** | `GET /repos/…/rulesets/28037705` |
+| 套用在 `main` 的規則 | `deletion`（禁止刪除）、`non_fast_forward`（禁止強制推送）、`pull_request`（`required_approving_review_count: 0`，其他審查選項都關閉） | `GET /repos/…/rules/branches/main` |
+| Pages | `has_pages: false` | `GET /repos/…` |
+| Secret scanning、Push protection | 都是 `enabled` | 同上 `security_and_analysis` |
+| Actions 的 workflow 權限 | **無法以公開 API 核對**（需要管理員權限）；依負責人表示已設定 | — |
+
+- 之後加入 CI 時，要在 ruleset 加上「Require status checks to pass」。
+- 這些是負責人的設定；Claude 不修改 Settings。
 
 ## Settings 建議（負責人設定，Claude 不修改）
 
@@ -36,3 +49,4 @@
 | 2026-11-25 | ChatGPT → Claude | PR #1 審查（Reviewed Head `d54649e`）：範圍、契約、11 項驗收可以接受；WEB-REV-001（P2）：上游回歸的縮減沒有揭露。審查者沒有審查 D0.2（`2663a1a`） |
 | 2026-11-25 | Claude → ChatGPT | WEB-REV-001：SPEC §6.1 明寫為相對 v0.4 的**調整**——沿用的既有證據、一定要在本 repository 實測的項目、啟動器整合時的上游煙霧檢查、需要重新評估的情況。DESIGN 補上「關閉對話框不等於放棄操作」 |
 | 2026-11-25 | 負責人 → Claude | Q-1：`Homework-manager-` 就是基準 → SPEC §8、DESIGN、CLAUDE.md 更新 |
+| 2026-11-25 | 負責人 → Claude | Q-3：Settings 設定完成；Claude 核對（上方） |
