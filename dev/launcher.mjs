@@ -14,9 +14,11 @@
  *  object (libuv), so an abrupt end of the launcher does not kill firebase before it can stop the Java Firestore
  *  emulator, which firebase-tools itself starts detached (Windows run 2026-11-26: 8080/9150 were left open).
  *  Its output goes to a LOG FILE that the launcher relays to the screen, never to a pipe: once the launcher is gone,
- *  a write to a broken pipe could end firebase before its cleanup. */
+ *  a write to a broken pipe could end firebase before its cleanup.
+ *  Success (exit 0) requires ALL of: the stack recorded a successful stop outcome (dev/stop.mjs), firebase exited 0,
+ *  no escalation was needed, and every port is confirmed closed. Anything else is reported as a failure (WEB3-REV-001). */
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync, openSync, closeSync, readSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync, openSync, closeSync, readSync, readFileSync } from 'node:fs';
 import os from 'node:os';
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
@@ -33,8 +35,9 @@ try {
   const { cleanEnv } = await importUpstream(u.stage2, 'src/orchestrator.mjs');
   const { PROJECT_ID } = await importUpstream(u.stage2, 'src/local-guard.mjs');
   const stackJs = path.join(path.dirname(fileURLToPath(import.meta.url)), 'stack.mjs');
-  const ctl = mkdtempSync(path.join(os.tmpdir(), 'cmn-w1-ctl-')); const stopFile = path.join(ctl, 'stop');
-  const env = cleanEnv(process.env, { RUN_NONCE: randomBytes(16).toString('hex'), CMN_UPSTREAM_STAGE2: u.stage2, CMN_SCENARIO: scenario, CMN_WEB_PORT: String(WEB_PORT), CMN_STOP_FILE: stopFile, CMN_LAUNCHER_PID: String(process.pid) });
+  const ctl = mkdtempSync(path.join(os.tmpdir(), 'cmn-w1-ctl-')); const stopFile = path.join(ctl, 'stop'); const resultFile = path.join(ctl, 'stop-result.json');
+  console.log(`launcher: control dir ${ctl}`);
+  const env = cleanEnv(process.env, { RUN_NONCE: randomBytes(16).toString('hex'), CMN_UPSTREAM_STAGE2: u.stage2, CMN_SCENARIO: scenario, CMN_WEB_PORT: String(WEB_PORT), CMN_STOP_FILE: stopFile, CMN_STOP_RESULT: resultFile, CMN_LAUNCHER_PID: String(process.pid) });
   const win = process.platform === 'win32';
   // POSIX: own process group, so an escalation reaches firebase, its shell, the stack and the emulators together
   const logFile = path.join(ctl, 'emulators.log'); const logFd = openSync(logFile, 'a');
@@ -65,14 +68,21 @@ try {
   const code = await exitP;
   clearInterval(relayTimer); relay(); closeSync(rfd);
   process.stdin.pause(); process.stdin.unref?.();
+  let stopResult = null; try { stopResult = JSON.parse(readFileSync(resultFile, 'utf8')); } catch { /* missing = not a success */ }
   rmSync(ctl, { recursive: true, force: true });
   // the emulators may need a moment to release their ports; then every port must be confirmed closed
   let lastErr = null;
   for (let i = 0; i < 60; i += 1) { try { await requirePortsClosed(u.stage2, [...UPSTREAM_PORTS, WEB_PORT]); lastErr = null; break; } catch (e) { lastErr = e; await new Promise((r) => setTimeout(r, 500)); } }
   if (lastErr) throw lastErr;
-  if (forced) { console.log(`stopped by FORCE (${forced}; exit ${code}); ports confirmed closed`); process.exit(3); }
-  console.log(`stopped (exit ${code}); ports confirmed closed`);
-  process.exit(code);
+  if (forced) { console.log(`stopped by FORCE (${forced}; exit ${code}); ports confirmed closed — NOT a clean stop`); process.exit(3); }
+  const stackOk = stopResult && stopResult.code === 0;
+  if (!stackOk || code !== 0) {
+    const what = stopResult ? `${stopResult.outcome}${stopResult.detail ? ` — ${stopResult.detail}` : ''}` : 'no stop outcome recorded by the stack';
+    console.log(`stop FAILED (exit ${code}; stack: ${what}); ports confirmed closed`);
+    process.exit(code !== 0 ? code : (stopResult?.code || 5));
+  }
+  console.log(`stopped (exit 0); ports confirmed closed; stack cleanup: ${stopResult.outcome}`);
+  process.exit(0);
 } catch (e) {
   if (e instanceof UpstreamError) { console.log(`REFUSED: ${e.message}`); process.exit(2); }
   throw e;

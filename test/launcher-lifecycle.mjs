@@ -10,7 +10,8 @@
  *  independently of the launcher's own report. Writes test-results/launcher-<platform>-<time>.json. */
 import { spawn } from 'node:child_process';
 import http from 'node:http';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -37,9 +38,7 @@ async function portsClosedWithin(ms) {
   return { ok: false, after: ms, last };
 }
 /** start the launcher; resolves once the stack prints "W1 ready" */
-const CLEANUP_HINT = process.platform === 'win32'
-  ? 'a process from an earlier run is still listening. See docs/WINDOWS.md 「清除殘留」: list the java processes on 8080/9150 and stop them, then run this again.'
-  : 'a process from an earlier run is still listening; stop it, then run this again.';
+const CLEANUP_HINT = `something is still listening on a W1 port. Run \`node dev/leftovers.mjs --upstream "${upstream}"\` (docs/WINDOWS.md 「清除殘留」): it shows which processes belong to this W1 setup. Stop only OWNED ones with the command it prints; report NOT_OWNED ones. Then run this again.`;
 async function start() {
   try { await requirePortsClosed(u.stage2, PORTS); } catch (e) { throw new Error(`${e.message} — ${CLEANUP_HINT}`); }
   const p = spawn(process.execPath, [LAUNCHER, '--upstream', upstream, '--scenario', 'S-LEAVE-SC01'], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
@@ -50,11 +49,15 @@ async function start() {
   if (!out.includes('W1 ready')) throw new Error(`launcher not ready:\n${out.slice(-3000)}`);
   const index = await req('GET', '/');
   const variant = await req('POST', '/extra/../v1/read', { origin: `http://127.0.0.1:${WEB_PORT}`, 'content-type': 'application/json' });
-  return { p, exit, out: () => out, index, variant, readyAfter: Date.now() - t0 };
+  const ctl = (out.match(/launcher: control dir (.+)/) || [])[1]?.trim() || null;
+  return { p, exit, out: () => out, index, variant, ctl, readyAfter: Date.now() - t0 };
 }
 const withTimeout = (pr, ms) => Promise.race([pr, sleep(ms).then(() => null)]);
 
+const git = (...a) => { try { return execFileSync('git', ['-C', path.join(HERE, '..'), ...a], { encoding: 'utf8' }).trim(); } catch { return null; } };
+const provenance = { head: git('rev-parse', 'HEAD'), branch: git('rev-parse', '--abbrev-ref', 'HEAD'), dirty: git('status', '--porcelain'), upstreamHead: (() => { try { return execFileSync('git', ['-C', upstream, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(); } catch { return null; } })(), platform: process.platform, release: os.release(), node: process.version, cwd: process.cwd() };
 console.log(`platform ${process.platform} ${os.release()} — node ${process.version}`);
+console.log(`HEAD ${provenance.head} (${provenance.branch}) — working tree ${provenance.dirty ? 'DIRTY:\n' + provenance.dirty : 'clean'} — upstream ${provenance.upstreamHead}`);
 try {
   /* A: q + Enter */
   {
@@ -63,8 +66,8 @@ try {
     const e = await withTimeout(s.exit, 90000);
     const ports = await portsClosedWithin(30000);
     const out = s.out();
-    log(s.index === 200 && s.variant === 404 && e && e.code === 0 && /stopped \(exit 0\); ports confirmed closed/.test(out) && !/FORCE/.test(out) && ports.ok,
-      'A: "q" + Enter → graceful stop, exit 0, no force, every port closed', `index=${s.index} variant=${s.variant} ready=${s.readyAfter}ms exit=${JSON.stringify(e)} ports=${JSON.stringify(ports)}`);
+    log(s.index === 200 && s.variant === 404 && e && e.code === 0 && /stopped \(exit 0\); ports confirmed closed; stack cleanup: CLEAN/.test(out) && !/FORCE|FAILED/.test(out) && ports.ok,
+      'A: "q" + Enter → graceful stop, exit 0, stack cleanup CLEAN, no force, every port closed', `index=${s.index} variant=${s.variant} ready=${s.readyAfter}ms exit=${JSON.stringify(e)} ports=${JSON.stringify(ports)}`);
   }
   /* B: abrupt kill of the launcher (POSIX SIGKILL; Windows TerminateProcess) */
   {
@@ -72,8 +75,13 @@ try {
     if (process.platform === 'win32') s.p.kill(); else s.p.kill('SIGKILL');
     const e = await withTimeout(s.exit, 10000);
     const ports = await portsClosedWithin(90000);
-    log(s.index === 200 && s.variant === 404 && e !== null && ports.ok,
-      'B: launcher killed abruptly → the stack stops by itself; every port closed (no orphan listening)', `index=${s.index} variant=${s.variant} exit=${JSON.stringify(e)} ports=${JSON.stringify(ports)}`);
+    // ports closing is NOT enough: the stack's own recorded outcome must be a successful stop (WEB3-REV-001)
+    let rec = null; const rf = s.ctl ? path.join(s.ctl, 'stop-result.json') : null;
+    for (let k = 0; k < 20 && rf && !existsSync(rf); k += 1) await sleep(500);
+    try { rec = JSON.parse(readFileSync(rf, 'utf8')); } catch { /* missing */ }
+    if (s.ctl) rmSync(s.ctl, { recursive: true, force: true });   // the killed launcher could not remove it
+    log(s.index === 200 && s.variant === 404 && e !== null && ports.ok && rec && rec.trigger === 'launcher gone' && rec.code === 0 && rec.outcome === 'CLEAN',
+      'B: launcher killed abruptly → the stack stops by itself with outcome CLEAN (recorded); every port closed (no orphan listening)', `index=${s.index} variant=${s.variant} exit=${JSON.stringify(e)} stack=${JSON.stringify(rec)} ports=${JSON.stringify(ports)}`);
   }
   /* C: Ctrl+C */
   if (process.platform !== 'win32') {
@@ -82,11 +90,11 @@ try {
     const e = await withTimeout(s.exit, 90000);
     const ports = await portsClosedWithin(30000);
     const out = s.out();
-    log(s.index === 200 && s.variant === 404 && e && e.code === 0 && /stopped \(exit 0\)/.test(out) && !/FORCE/.test(out) && ports.ok,
-      'C: SIGINT to the launcher (Ctrl+C) → graceful stop, exit 0, no force, every port closed', `exit=${JSON.stringify(e)} ports=${JSON.stringify(ports)}`);
+    log(s.index === 200 && s.variant === 404 && e && e.code === 0 && /stopped \(exit 0\); ports confirmed closed; stack cleanup: CLEAN/.test(out) && !/FORCE|FAILED/.test(out) && ports.ok,
+      'C: SIGINT to the launcher (Ctrl+C) → graceful stop, exit 0, stack cleanup CLEAN, no force, every port closed', `exit=${JSON.stringify(e)} ports=${JSON.stringify(ports)}`);
   } else {
     log(null, 'C: Ctrl+C on Windows cannot be sent from a script — check by hand',
-      'run `node dev\\launcher.mjs --upstream <path> --scenario S-LEAVE-SC01` in a terminal, open http://127.0.0.1:18400/, press Ctrl+C: expect "stopped (exit 0); ports confirmed closed" (not FORCE)');
+      'run `node dev\\launcher.mjs --upstream <path> --scenario S-LEAVE-SC01` in a terminal, open http://127.0.0.1:18400/, press Ctrl+C: expect "stopped (exit 0); ports confirmed closed; stack cleanup: CLEAN" (not FORCE / FAILED)');
   }
 } catch (e) {
   log(false, 'lifecycle aborted', String(e.stack || e).split('\n').slice(0, 6).join(' | '));
@@ -97,6 +105,6 @@ const auto = results.filter((r) => r.ok !== null);
 const ok = auto.every((r) => r.ok);
 const out = path.join(HERE, '..', 'test-results', `launcher-${process.platform}-${new Date().toISOString().replace(/[-:]/g, '').replace(/\..+/, 'Z')}.json`);
 mkdirSync(path.dirname(out), { recursive: true });
-writeFileSync(out, JSON.stringify({ platform: process.platform, release: os.release(), node: process.version, ok, results }, null, 2));
-console.log(`LAUNCHER_LIFECYCLE ok=${ok} checks=${auto.filter((r) => r.ok).length}/${auto.length} out=${out}`);
+writeFileSync(out, JSON.stringify({ ...provenance, ok, results }, null, 2));
+console.log(`LAUNCHER_LIFECYCLE head=${provenance.head} ok=${ok} checks=${auto.filter((r) => r.ok).length}/${auto.length} out=${out}`);
 process.exit(ok ? 0 : 1);

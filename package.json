@@ -8,10 +8,11 @@
     "node": ">=22"
   },
   "scripts": {
-    "test": "node --test test/proxy.test.mjs",
+    "test": "node --test test/proxy.test.mjs test/stop.test.mjs test/leftovers.test.mjs",
     "dev": "node dev/launcher.mjs",
     "e2e": "node test/run-e2e.mjs",
-    "launcher:test": "node test/launcher-lifecycle.mjs"
+    "launcher:test": "node test/launcher-lifecycle.mjs",
+    "leftovers": "node dev/leftovers.mjs"
   },
   "devDependencies": {
     "playwright": "1.63.0"

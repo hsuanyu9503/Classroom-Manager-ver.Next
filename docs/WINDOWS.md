@@ -1,7 +1,10 @@
 # 在 Windows 上啟動、停止與驗證 W1
 
 > 只供開發與驗收。只用虛構測資、只連本機的 Firebase Emulator、**不部署**。
-> 狀態：Windows 的啟動與停止**尚未**在 Windows 上驗證。下面的步驟就是驗證的方法；結果請記入 `docs/HANDOFF.md`。
+> **目前的驗證狀態**（詳見 `docs/HANDOFF.md`）：
+> - 已在 Windows 驗證（負責人，2026-11-26，Windows 10.0.26200，Node 26.13.1，**截圖**）：`launcher:test` 3/3（A、B、final）、手動 Ctrl+C 正常停止。驗證的是修正 B 之後的版本，但截圖沒有包含 commit SHA。
+> - WEB3-REV-001／002 修正之後（停止結果的判定、清除殘留的工具），**還沒有**在 Windows 重跑。
+> - 沒有驗證：Windows 上的 E2E、強制停止（FORCE）與 `taskkill`、macOS、WSL。
 
 ## 1. 需要的軟體
 
@@ -56,26 +59,38 @@ npm run launcher:test -- --upstream C:\cmn\cmn-1e20989
 | C | Ctrl+C | Windows 不能用程式送出 Ctrl+C，列為 **MANUAL**，見第 4 節 |
 
 - 每個案例執行中都會檢查：首頁回應 200；路徑變體 `/extra/../v1/read` 回應 404。
-- 最後一行是 `LAUNCHER_LIFECYCLE ok=true checks=3/3 ...`：A、B 和最後的 port 檢查；C 是 MANUAL，不計入。結果 JSON 在 `test-results\launcher-win32-*.json`。
+- 開頭會印出 `HEAD <commit>`，以及工作目錄是否乾淨（`working tree clean`）。
+- 最後一行是 `LAUNCHER_LIFECYCLE head=<commit> ok=true checks=3/3 ...`：A、B 和最後的 port 檢查；C 是 MANUAL，不計入。
+- A、B 除了 port 都關閉之外，還要求 stack 自己記錄的停止結果是 `CLEAN`。只有 port 關閉不算成功。
+- 結果 JSON 在 `test-results\launcher-win32-*.json`，內含 HEAD、工作目錄狀態、平台與 Node 版本。請把**原始 JSON 檔**交回，不只截圖。
 
-### 清除殘留（只有測試失敗、port 仍被佔用時才需要）
+### 清除殘留（只有出現 `ports not confirmed closed` 時才需要）
 
-如果看到 `ports not confirmed closed: 8080=open, 9150=open`，代表先前的執行留下了 Firestore Emulator（Java）。
+**不要**只憑程式名稱（例如 `java`）或 port 停止程式：你電腦上的其他服務也可能用到這些 port。請用下面這個工具，它只會把**能證明屬於這套 W1 設定**的程式標成 `OWNED`。
 
-1. 先列出佔用這兩個 port 的程式：
-
-   ```powershell
-   Get-NetTCPConnection -LocalPort 8080,9150 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Get-Process -Id $_.OwningProcess } | Select-Object Id,ProcessName -Unique
-   ```
-
-2. 如果列出的都是 `java`，用下面的指令只停止這些 java：
+1. 列出目前佔用 W1 port 的程式（**這一步不會停止任何東西**）：
 
    ```powershell
-   Get-NetTCPConnection -LocalPort 8080,9150 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Get-Process -Id $_.OwningProcess } | Where-Object ProcessName -eq 'java' | Stop-Process -Force
+   node dev\leftovers.mjs --upstream C:\cmn\cmn-1e20989
    ```
 
-   - 如果列出的不是 `java`，表示是你電腦上的其他程式，**不要**停止它，請回報。
-   - 也可以直接重新開機。
+   每個程式會顯示 port、PID、名稱、啟動時間和完整的命令列，前面標示：
+   - `OWNED`：命令列證明它屬於這套 W1 設定。例如 Firestore Emulator 必須同時符合：Firestore Emulator 的 JAR、專案 `demo-cmn-s2b2`，以及**這個**上游 checkout 的 `poc\stage2\firestore.rules`；
+   - `NOT_OWNED`：不屬於、或無法確認。**不要停止**，請把畫面回報給 Claude。
+   - 如果顯示 `LEFTOVERS none`，表示已經沒有殘留。
+
+2. 只對 `OWNED` 的程式，複製工具印出的那一行指令執行，例如：
+
+   ```powershell
+   node dev\leftovers.mjs --upstream "C:\cmn\cmn-1e20989" --stop 12345 --started "2026-11-26T04:35:53.0000000Z"
+   ```
+
+   - 執行的當下，工具會**重新核對**：同一個 PID、同一個啟動時間、仍然佔用 W1 的 port、仍然是 `OWNED`。任何一項不符就拒絕（`REFUSED`），什麼都不停止。
+   - 成功時會顯示 `stopped PID …` 和 `confirmed: it no longer listens on any W1 port`。
+
+3. 再執行一次第 1 步，確認顯示 `LEFTOVERS none`。
+
+- 也可以直接重新開機。
 
 ## 4. 手動驗證：Ctrl+C
 
@@ -87,9 +102,9 @@ node dev\launcher.mjs --upstream C:\cmn\cmn-1e20989 --scenario S-LEAVE-SC01
 
 1. 看到 `W1 ready` 後，用瀏覽器打開 http://127.0.0.1:18400/，確認頁面出現。
 2. 回到終端機按 **Ctrl+C**。
-3. 預期看到 `stopped (exit 0); ports confirmed closed`。
-   - 如果看到 `stopped by FORCE`，代表正常停止失敗、改用強制終止，請回報。
-   - 如果看到 `REFUSED: ports not confirmed closed`，代表有殘留，請回報該訊息。
+3. 預期看到 `stopped (exit 0); ports confirmed closed; stack cleanup: CLEAN`。
+   - 如果看到 `stopped by FORCE` 或 `stop FAILED`，代表停止或資料清除沒有正常完成，請回報。
+   - 如果看到 `REFUSED: ports not confirmed closed`，代表有殘留：照上面「清除殘留」處理，並回報該訊息。
 
 停止的方法：Ctrl+C、Ctrl+Break，或輸入 `q` + Enter。重設資料＝停止後重新啟動。
 
@@ -106,7 +121,7 @@ npm run e2e -- --upstream C:\cmn\cmn-1e20989
 
 請把以下內容交給 Claude 或 ChatGPT：
 
-- 第 3 節的終端機輸出與 `test-results\launcher-win32-*.json`；
+- 第 3 節的終端機輸出與 `test-results\launcher-win32-*.json`（**原始檔**）；
 - 第 4 節看到的最後一行；
 - （如有執行）第 5 節的最後一行；
 - `node -v`、`java -version` 的輸出。
