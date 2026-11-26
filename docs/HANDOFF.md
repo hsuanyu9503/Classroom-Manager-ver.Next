@@ -37,6 +37,18 @@
   - 證據形式：負責人提供的**截圖**，不是原始檔。
 - 驗證步驟：`docs/WINDOWS.md`。
 
+**ChatGPT 審查（Reviewed Head `02fef5a`）：需修正後複查**
+
+| 編號 | 問題 | 修正 | 證據（作者，Linux） |
+|---|---|---|---|
+| WEB3-REV-001（P2） | stack 停止時 5 秒到就 `exit(0)`，清理的錯誤也被吞掉：逾時或失敗會被當成正常停止。審查者在 Windows 以 mock 重現：卡住時約 5 秒 exit 0，沒有執行 `up.close()` | `dev/stop.mjs` 判定停止結果：<br>• `CLEAN`：exit 0；<br>• `EMULATORS_GONE`：清理失敗，但事後**確認** Emulator 的 port 已關閉，exit 0，明確分類；<br>• `STOP_TIMEOUT`：exit 4；<br>• `STOP_ERROR`、`CLEANUP_ERROR`：exit 5。<br>stack 以這個結果結束，並寫入結果檔。<br>啟動器只有在四個條件都成立時才算成功：stack 記錄成功、firebase exit 0、沒有升級、port 全關；否則顯示 `stop FAILED` 並以非零值結束 | `stop.test.mjs`：<br>• runStop 8 項；<br>• **真正的** `dev/stack.mjs` 加上注入的故障 6 項：卡住→4、拋錯→5、Emulator 仍在→5、確認已關→0。<br>舊 `stack.mjs`（`02fef5a`）跑同一組測試：6 項整合測試全部失敗，卡住時 exit 0。<br>端對端 mutation：讓清理拋錯，真正的啟動器輸出 `stop FAILED (exit 5; stack: CLEANUP_ERROR …)` |
+| WEB3-REV-002（P2） | 清除殘留的指令只憑 `java` 名稱和 port 就 `Stop-Process -Force`，可能終止無關的 Java 服務 | 新增 `dev/leftovers.mjs`：<br>• 列出 W1 port 上的程式（PID、啟動時間、完整命令列）；<br>• 以**精確的參數**判定 `OWNED`：Firestore JAR、`--project_id demo-cmn-s2b2`、這個 checkout 的 `--rules`；或這個 checkout 的 firebase-tools、stack；<br>• `--stop` 在執行的當下重新核對 PID、啟動時間、port、擁有權，只停止一個 PID。<br>`WINDOWS.md` 與測試的提示都改用它 | `leftovers.test.mjs` 7 項：其中「專案名稱的前綴」這個漏洞是測試抓到後才修正的。<br>Linux 實際執行：<br>• 三個 W1 程式都是 OWNED；<br>• 錯誤或缺少啟動時間 → REFUSED；<br>• 模擬「孤兒 Firestore」：OWNED，停止並確認；<br>• 模擬「無關的 Java 在 9150」：NOT_OWNED，拒絕停止，它繼續執行 |
+
+- 本輪測試（作者，Linux，Head `574c354`，工作目錄乾淨）：
+  - `npm test` 33/33；
+  - `launcher:test` 4/4：A、C 要求 `stack cleanup: CLEAN`；B 要求 stack 記錄的結果是 `CLEAN`（`trigger: launcher gone`）。
+- **未執行**：修正後在 Windows 上重跑；Windows 上的 `leftovers.mjs`（PowerShell 的查詢）**只經人工檢視**。
+
 **測試結果**
 
 - **已通過：作者執行**（Linux 雲端環境，Node 22.23.5）
@@ -157,3 +169,5 @@
 | 2026-11-26 | 負責人 → Claude | Windows 第一次執行：A 通過、B 失敗（Java 版 Firestore Emulator 殘留在 8080／9150） |
 | 2026-11-26 | Claude | 修正：firebase 以 detached 啟動、輸出改寫記錄檔；Linux 4/4；待 Windows 重跑 |
 | 2026-11-26 | 負責人 → Claude | Windows 第二次執行（修正後）：`launcher:test` 3/3、手動 Ctrl+C 通過（截圖） |
+| 2026-11-26 | ChatGPT → Claude | PR #3 審查（Reviewed Head `02fef5a`）：WEB3-REV-001、002（P2） |
+| 2026-11-26 | Claude → ChatGPT | 修正 WEB3-REV-001、002（Head `574c354`）；Linux 33/33、4/4；待 Windows 重跑與複審 |
