@@ -9,9 +9,14 @@
  *  stack to stop through a STOP FILE (no signal needed, so it also works on Windows, which has no POSIX process
  *  groups). The stack also stops by itself if the launcher is killed abruptly (it watches the launcher's PID).
  *  If the stack does not end in time, the launcher escalates: POSIX → SIGINT, then SIGKILL to the whole process
- *  group; Windows → `taskkill /T /F` on the process tree. A forced stop is reported and exits 3. */
+ *  group; Windows → `taskkill /T /F` on the process tree. A forced stop is reported and exits 3.
+ *  firebase is started DETACHED on every platform. On Windows this keeps it out of the launcher's kill-on-close job
+ *  object (libuv), so an abrupt end of the launcher does not kill firebase before it can stop the Java Firestore
+ *  emulator, which firebase-tools itself starts detached (Windows run 2026-11-26: 8080/9150 were left open).
+ *  Its output goes to a LOG FILE that the launcher relays to the screen, never to a pipe: once the launcher is gone,
+ *  a write to a broken pipe could end firebase before its cleanup. */
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync, openSync, closeSync, readSync } from 'node:fs';
 import os from 'node:os';
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
@@ -32,7 +37,13 @@ try {
   const env = cleanEnv(process.env, { RUN_NONCE: randomBytes(16).toString('hex'), CMN_UPSTREAM_STAGE2: u.stage2, CMN_SCENARIO: scenario, CMN_WEB_PORT: String(WEB_PORT), CMN_STOP_FILE: stopFile, CMN_LAUNCHER_PID: String(process.pid) });
   const win = process.platform === 'win32';
   // POSIX: own process group, so an escalation reaches firebase, its shell, the stack and the emulators together
-  const child = spawn(process.execPath, [u.firebaseJs, 'emulators:exec', '--only', 'auth,firestore', '--project', PROJECT_ID, `node "${stackJs}"`], { cwd: u.stage2, env, stdio: ['ignore', 'inherit', 'inherit'], detached: !win, windowsHide: true });
+  const logFile = path.join(ctl, 'emulators.log'); const logFd = openSync(logFile, 'a');
+  const child = spawn(process.execPath, [u.firebaseJs, 'emulators:exec', '--only', 'auth,firestore', '--project', PROJECT_ID, `node "${stackJs}"`], { cwd: u.stage2, env, stdio: ['ignore', logFd, logFd], detached: true, windowsHide: true });
+  closeSync(logFd);
+  // relay the log file to this console (also lets a test read "W1 ready" from the launcher's stdout)
+  const rfd = openSync(logFile, 'r'); let pos = 0; const buf = Buffer.alloc(64 * 1024);
+  const relay = () => { for (;;) { const n = readSync(rfd, buf, 0, buf.length, pos); if (n <= 0) break; pos += n; process.stdout.write(buf.subarray(0, n)); } };
+  const relayTimer = setInterval(relay, 200);
   let exited = false; let forced = null; let requested = false;
   const exitP = new Promise((r) => child.on('exit', (c) => { exited = true; r(c ?? 1); }));
   const group = (sig) => { try { process.kill(-child.pid, sig); } catch { try { child.kill(sig); } catch { /* gone */ } } };
@@ -52,6 +63,7 @@ try {
   process.stdin.on('data', (d) => { if (/^\s*q\s*$/im.test(d)) requestStop('q'); });
   process.stdin.on('error', () => {});
   const code = await exitP;
+  clearInterval(relayTimer); relay(); closeSync(rfd);
   process.stdin.pause(); process.stdin.unref?.();
   rmSync(ctl, { recursive: true, force: true });
   // the emulators may need a moment to release their ports; then every port must be confirmed closed

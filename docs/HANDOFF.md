@@ -18,6 +18,14 @@
   2. **啟動器存活監看**：stack 監看啟動器的 PID；啟動器被直接終止時，stack 自己停止，不會留下仍在監聽的程序。
   3. **升級**：20 秒內沒有結束時，POSIX 送 SIGINT 給整個程序群組；40 秒時，POSIX 送 SIGKILL 給群組、Windows 用 `taskkill /T /F` 終止程序樹。強制停止會明確顯示 `stopped by FORCE` 並 exit 3，不算成功。
 - 原生 Windows 的拒絕已移除。
+- **Windows 第一次執行（負責人，2026-11-26，Windows 10.0.26200，Node 26.13.1，Head `7916611`）**：
+  - A 通過；B 失敗：啟動器被終止後，8080 與 9150 在 90 秒後仍然開著，其他 port 都已關閉。
+  - 原因：
+    - Windows 上，Node（libuv）把非 detached 的子程序放進「關閉時終止」的 job object，所以啟動器一結束，firebase 也跟著被終止，來不及關閉 Firestore Emulator；
+    - firebase-tools 自己以 detached 啟動 Java 版的 Firestore Emulator（`downloadableEmulators.js` 的 `_runBinary`），所以 Java 留了下來；
+    - stack 不在這個 job 裡，所以它自己停止，18300～18400 都已關閉。
+  - 修正：firebase 在各平台都以 detached 啟動，脫離啟動器的 job；它的輸出改寫到記錄檔，由啟動器轉印到畫面，避免啟動器不在之後寫入斷掉的 pipe。
+  - 同一次的第二次執行因為上一次的殘留而無法開始，**不是**新的問題。`docs/WINDOWS.md` 已補上「清除殘留」的步驟。
 - 驗證步驟：`docs/WINDOWS.md`。
 
 **測試結果**
@@ -26,8 +34,10 @@
   - `npm run launcher:test`：4/4。A 用 `q` + Enter，走停止檔通道；B 直接終止啟動器（SIGKILL），走存活監看；C 用 SIGINT；最後確認所有 port 都已關閉。三個案例執行中都確認首頁 200、路徑變體 404。A、B 用的正是 Windows 依靠的兩個通道。
   - Mutation：停用存活監看後，B 失敗，9 個 port 在 90 秒後仍然開著，證明測試能抓到殘留。之後已清除殘留程序。
   - `npm test`：12/12。
+  - 修正 B 之後（記錄檔轉印、firebase detached）：Linux 4/4。
+- **負責人在 Windows 執行**：見上方第一次執行。A 通過，表示停止檔、`cmd.exe` 的引號處理、首頁 200、路徑變體 404 在 Windows 都正常。
 - **未執行**
-  - **Windows 上的任何執行**：A、B、Ctrl+C，`cmd.exe` 對 `node "<path>"` 的引號處理，`taskkill` 升級；
+  - **修正後**在 Windows 上的 B 與手動 Ctrl+C；`taskkill` 升級；
   - macOS、WSL；
   - 升級（FORCE）路徑：Linux 上也沒有觸發。
 - **只經人工檢視**：`docs/WINDOWS.md` 的步驟。
@@ -135,3 +145,5 @@
 | 2026-11-25 | Claude | 只更新 HANDOFF（記錄 R1 結果；重新取得單次的舊 proxy mutation 紀錄）。程式與測試和 `b7458ad` 相同 |
 | 2026-11-25 | 負責人 → Claude | 合併 PR #2（`e11651d`）；補上 Windows 的啟動與停止驗證；上游文件開 PR（class-management-next #23） |
 | 2026-11-25 | Claude | Windows 啟動器：停止檔與存活監看；`launcher:test`（Linux 4/4，含 mutation）；`docs/WINDOWS.md`。**Windows 上尚未執行** |
+| 2026-11-26 | 負責人 → Claude | Windows 第一次執行：A 通過、B 失敗（Java 版 Firestore Emulator 殘留在 8080／9150） |
+| 2026-11-26 | Claude | 修正：firebase 以 detached 啟動、輸出改寫記錄檔；Linux 4/4；待 Windows 重跑 |

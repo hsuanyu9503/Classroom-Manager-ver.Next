@@ -37,8 +37,11 @@ async function portsClosedWithin(ms) {
   return { ok: false, after: ms, last };
 }
 /** start the launcher; resolves once the stack prints "W1 ready" */
+const CLEANUP_HINT = process.platform === 'win32'
+  ? 'a process from an earlier run is still listening. See docs/WINDOWS.md 「清除殘留」: list the java processes on 8080/9150 and stop them, then run this again.'
+  : 'a process from an earlier run is still listening; stop it, then run this again.';
 async function start() {
-  await requirePortsClosed(u.stage2, PORTS);
+  try { await requirePortsClosed(u.stage2, PORTS); } catch (e) { throw new Error(`${e.message} — ${CLEANUP_HINT}`); }
   const p = spawn(process.execPath, [LAUNCHER, '--upstream', upstream, '--scenario', 'S-LEAVE-SC01'], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
   let out = ''; p.stdout.on('data', (d) => { out += d; }); p.stderr.on('data', (d) => { out += d; });
   const exit = new Promise((r) => p.on('exit', (c, sig) => r({ code: c, sig })));

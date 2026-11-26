@@ -58,6 +58,25 @@ npm run launcher:test -- --upstream C:\cmn\cmn-1e20989
 - 每個案例執行中都會檢查：首頁回應 200；路徑變體 `/extra/../v1/read` 回應 404。
 - 最後一行是 `LAUNCHER_LIFECYCLE ok=true checks=3/3 ...`：A、B 和最後的 port 檢查；C 是 MANUAL，不計入。結果 JSON 在 `test-results\launcher-win32-*.json`。
 
+### 清除殘留（只有測試失敗、port 仍被佔用時才需要）
+
+如果看到 `ports not confirmed closed: 8080=open, 9150=open`，代表先前的執行留下了 Firestore Emulator（Java）。
+
+1. 先列出佔用這兩個 port 的程式：
+
+   ```powershell
+   Get-NetTCPConnection -LocalPort 8080,9150 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Get-Process -Id $_.OwningProcess } | Select-Object Id,ProcessName -Unique
+   ```
+
+2. 如果列出的都是 `java`，用下面的指令只停止這些 java：
+
+   ```powershell
+   Get-NetTCPConnection -LocalPort 8080,9150 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Get-Process -Id $_.OwningProcess } | Where-Object ProcessName -eq 'java' | Stop-Process -Force
+   ```
+
+   - 如果列出的不是 `java`，表示是你電腦上的其他程式，**不要**停止它，請回報。
+   - 也可以直接重新開機。
+
 ## 4. 手動驗證：Ctrl+C
 
 ```powershell
