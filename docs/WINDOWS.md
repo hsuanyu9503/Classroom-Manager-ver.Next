@@ -11,6 +11,14 @@
 | Git | 任何近期版本 | `git --version` |
 | Java（JDK） | **21 以上**（firebase-tools 15.35.0 的要求） | `java -version` |
 
+沒有安裝的話，可以在 PowerShell 用 winget 安裝；裝完要**關掉 PowerShell 再重新打開**：
+
+```powershell
+winget install OpenJS.NodeJS.LTS
+winget install Git.Git
+winget install EclipseAdoptium.Temurin.21.JDK
+```
+
 ## 2. 準備兩個 checkout（PowerShell）
 
 路徑可以自己決定；下面用 `C:\cmn` 作例子。
@@ -25,8 +33,11 @@ npm ci
 cd C:\cmn
 git clone https://github.com/hsuanyu9503/Classroom-Manager-ver.Next.git
 cd Classroom-Manager-ver.Next
+git checkout claude/w1-windows-launcher
 npm ci
 ```
+
+- `git checkout claude/w1-windows-launcher`：PR #3 合併**之前**一定要切到這個分支；`main` 上的舊版啟動器在 Windows 會直接拒絕。合併之後就不需要這一行。
 
 - 上游一定要在固定版本 `1e20989`，`poc/stage2` 不能有修改，否則啟動器會拒絕（REFUSED）。
 - 第一次啟動 Emulator 時，firebase-tools 會下載 Emulator 的檔案；Windows 防火牆如果詢問，只允許「私人網路」即可（只用 127.0.0.1）。
