@@ -1,0 +1,297 @@
+{
+  "upstreamCommit": "1e20989ea6393c12dd18e11db617873c297a9f4a",
+  "screens": [
+    {
+      "file": "01-roster-a17-phone-390x844.png",
+      "id": "01-roster-a17",
+      "size": "390x844",
+      "what": "S-ROSTER-A17：P1 名冊（座號、狀態代碼）與摘要",
+      "banner": "測試情境：S-ROSTER-A17｜虛構資料｜暫定色票",
+      "horizontalOverflow": false
+    },
+    {
+      "file": "02-leave-initial-phone-390x844.png",
+      "id": "02-leave-initial",
+      "size": "390x844",
+      "what": "S-LEAVE-SC01：初始（LV-007 上午 v5）",
+      "banner": "測試情境：S-LEAVE-SC01｜虛構資料｜暫定色票",
+      "horizontalOverflow": false
+    },
+    {
+      "file": "03-leave-confirm-phone-390x844.png",
+      "id": "03-leave-confirm",
+      "size": "390x844",
+      "what": "S-LEAVE-SC01：確認對話框",
+      "banner": "測試情境：S-LEAVE-SC01｜虛構資料｜暫定色票",
+      "horizontalOverflow": false
+    },
+    {
+      "file": "04-leave-done-phone-390x844.png",
+      "id": "04-leave-done",
+      "size": "390x844",
+      "what": "S-LEAVE-SC01：成功（完成，全天 v6，收據）",
+      "banner": "測試情境：S-LEAVE-SC01｜虛構資料｜暫定色票",
+      "horizontalOverflow": false
+    },
+    {
+      "file": "05-conflict-phone-390x844.png",
+      "id": "05-conflict",
+      "size": "390x844",
+      "what": "兩個分頁：後送出的分頁顯示「衝突」，舊內容標示為不是最新",
+      "banner": "測試情境：S-LEAVE-SC01｜虛構資料｜暫定色票",
+      "horizontalOverflow": false
+    },
+    {
+      "file": "06-conflict-reread-phone-390x844.png",
+      "id": "06-conflict-reread",
+      "size": "390x844",
+      "what": "衝突後按「重新讀取」：顯示最新內容（全天 v6），更正按鈕停用",
+      "banner": "測試情境：S-LEAVE-SC01｜虛構資料｜暫定色票",
+      "horizontalOverflow": false
+    },
+    {
+      "file": "07-deny-phone-390x844.png",
+      "id": "07-deny",
+      "size": "390x844",
+      "what": "S-DENY：一般的「無法存取」",
+      "banner": "測試情境：S-DENY｜虛構資料｜暫定色票",
+      "horizontalOverflow": false
+    },
+    {
+      "file": "08-unknown-phone-390x844.png",
+      "id": "08-unknown",
+      "size": "390x844",
+      "what": "［故障注入］提交已發生但回應遺失：「尚未確認」與「查詢結果」「重新送出同一操作」",
+      "banner": "測試情境：S-LEAVE-SC01｜虛構資料｜暫定色票",
+      "horizontalOverflow": false
+    },
+    {
+      "file": "09-unknown-denied-phone-390x844.png",
+      "id": "09-unknown-denied",
+      "size": "390x844",
+      "what": "［故障注入］之後身分失效、重送被拒：「先前的送出結果尚未確認，目前無法存取」",
+      "banner": "測試情境：S-LEAVE-SC01｜虛構資料｜暫定色票",
+      "horizontalOverflow": false
+    },
+    {
+      "file": "01-roster-a17-tablet-820x1180.png",
+      "id": "01-roster-a17",
+      "size": "820x1180",
+      "what": "S-ROSTER-A17：P1 名冊（座號、狀態代碼）與摘要",
+      "banner": "測試情境：S-ROSTER-A17｜虛構資料｜暫定色票",
+      "horizontalOverflow": false
+    },
+    {
+      "file": "02-leave-initial-tablet-820x1180.png",
+      "id": "02-leave-initial",
+      "size": "820x1180",
+      "what": "S-LEAVE-SC01：初始（LV-007 上午 v5）",
+      "banner": "測試情境：S-LEAVE-SC01｜虛構資料｜暫定色票",
+      "horizontalOverflow": false
+    },
+    {
+      "file": "03-leave-confirm-tablet-820x1180.png",
+      "id": "03-leave-confirm",
+      "size": "820x1180",
+      "what": "S-LEAVE-SC01：確認對話框",
+      "banner": "測試情境：S-LEAVE-SC01｜虛構資料｜暫定色票",
+      "horizontalOverflow": false
+    },
+    {
+      "file": "04-leave-done-tablet-820x1180.png",
+      "id": "04-leave-done",
+      "size": "820x1180",
+      "what": "S-LEAVE-SC01：成功（完成，全天 v6，收據）",
+      "banner": "測試情境：S-LEAVE-SC01｜虛構資料｜暫定色票",
+      "horizontalOverflow": false
+    },
+    {
+      "file": "05-conflict-tablet-820x1180.png",
+      "id": "05-conflict",
+      "size": "820x1180",
+      "what": "兩個分頁：後送出的分頁顯示「衝突」，舊內容標示為不是最新",
+      "banner": "測試情境：S-LEAVE-SC01｜虛構資料｜暫定色票",
+      "horizontalOverflow": false
+    },
+    {
+      "file": "06-conflict-reread-tablet-820x1180.png",
+      "id": "06-conflict-reread",
+      "size": "820x1180",
+      "what": "衝突後按「重新讀取」：顯示最新內容（全天 v6），更正按鈕停用",
+      "banner": "測試情境：S-LEAVE-SC01｜虛構資料｜暫定色票",
+      "horizontalOverflow": false
+    },
+    {
+      "file": "07-deny-tablet-820x1180.png",
+      "id": "07-deny",
+      "size": "820x1180",
+      "what": "S-DENY：一般的「無法存取」",
+      "banner": "測試情境：S-DENY｜虛構資料｜暫定色票",
+      "horizontalOverflow": false
+    },
+    {
+      "file": "08-unknown-tablet-820x1180.png",
+      "id": "08-unknown",
+      "size": "820x1180",
+      "what": "［故障注入］提交已發生但回應遺失：「尚未確認」與「查詢結果」「重新送出同一操作」",
+      "banner": "測試情境：S-LEAVE-SC01｜虛構資料｜暫定色票",
+      "horizontalOverflow": false
+    },
+    {
+      "file": "09-unknown-denied-tablet-820x1180.png",
+      "id": "09-unknown-denied",
+      "size": "820x1180",
+      "what": "［故障注入］之後身分失效、重送被拒：「先前的送出結果尚未確認，目前無法存取」",
+      "banner": "測試情境：S-LEAVE-SC01｜虛構資料｜暫定色票",
+      "horizontalOverflow": false
+    },
+    {
+      "file": "01-roster-a17-desktop-1440x900.png",
+      "id": "01-roster-a17",
+      "size": "1440x900",
+      "what": "S-ROSTER-A17：P1 名冊（座號、狀態代碼）與摘要",
+      "banner": "測試情境：S-ROSTER-A17｜虛構資料｜暫定色票",
+      "horizontalOverflow": false
+    },
+    {
+      "file": "02-leave-initial-desktop-1440x900.png",
+      "id": "02-leave-initial",
+      "size": "1440x900",
+      "what": "S-LEAVE-SC01：初始（LV-007 上午 v5）",
+      "banner": "測試情境：S-LEAVE-SC01｜虛構資料｜暫定色票",
+      "horizontalOverflow": false
+    },
+    {
+      "file": "03-leave-confirm-desktop-1440x900.png",
+      "id": "03-leave-confirm",
+      "size": "1440x900",
+      "what": "S-LEAVE-SC01：確認對話框",
+      "banner": "測試情境：S-LEAVE-SC01｜虛構資料｜暫定色票",
+      "horizontalOverflow": false
+    },
+    {
+      "file": "04-leave-done-desktop-1440x900.png",
+      "id": "04-leave-done",
+      "size": "1440x900",
+      "what": "S-LEAVE-SC01：成功（完成，全天 v6，收據）",
+      "banner": "測試情境：S-LEAVE-SC01｜虛構資料｜暫定色票",
+      "horizontalOverflow": false
+    },
+    {
+      "file": "05-conflict-desktop-1440x900.png",
+      "id": "05-conflict",
+      "size": "1440x900",
+      "what": "兩個分頁：後送出的分頁顯示「衝突」，舊內容標示為不是最新",
+      "banner": "測試情境：S-LEAVE-SC01｜虛構資料｜暫定色票",
+      "horizontalOverflow": false
+    },
+    {
+      "file": "06-conflict-reread-desktop-1440x900.png",
+      "id": "06-conflict-reread",
+      "size": "1440x900",
+      "what": "衝突後按「重新讀取」：顯示最新內容（全天 v6），更正按鈕停用",
+      "banner": "測試情境：S-LEAVE-SC01｜虛構資料｜暫定色票",
+      "horizontalOverflow": false
+    },
+    {
+      "file": "07-deny-desktop-1440x900.png",
+      "id": "07-deny",
+      "size": "1440x900",
+      "what": "S-DENY：一般的「無法存取」",
+      "banner": "測試情境：S-DENY｜虛構資料｜暫定色票",
+      "horizontalOverflow": false
+    },
+    {
+      "file": "08-unknown-desktop-1440x900.png",
+      "id": "08-unknown",
+      "size": "1440x900",
+      "what": "［故障注入］提交已發生但回應遺失：「尚未確認」與「查詢結果」「重新送出同一操作」",
+      "banner": "測試情境：S-LEAVE-SC01｜虛構資料｜暫定色票",
+      "horizontalOverflow": false
+    },
+    {
+      "file": "09-unknown-denied-desktop-1440x900.png",
+      "id": "09-unknown-denied",
+      "size": "1440x900",
+      "what": "［故障注入］之後身分失效、重送被拒：「先前的送出結果尚未確認，目前無法存取」",
+      "banner": "測試情境：S-LEAVE-SC01｜虛構資料｜暫定色票",
+      "horizontalOverflow": false
+    },
+    {
+      "file": "01-roster-a17-classroom-1024x768.png",
+      "id": "01-roster-a17",
+      "size": "1024x768",
+      "what": "S-ROSTER-A17：P1 名冊（座號、狀態代碼）與摘要",
+      "banner": "測試情境：S-ROSTER-A17｜虛構資料｜暫定色票",
+      "horizontalOverflow": false
+    },
+    {
+      "file": "02-leave-initial-classroom-1024x768.png",
+      "id": "02-leave-initial",
+      "size": "1024x768",
+      "what": "S-LEAVE-SC01：初始（LV-007 上午 v5）",
+      "banner": "測試情境：S-LEAVE-SC01｜虛構資料｜暫定色票",
+      "horizontalOverflow": false
+    },
+    {
+      "file": "03-leave-confirm-classroom-1024x768.png",
+      "id": "03-leave-confirm",
+      "size": "1024x768",
+      "what": "S-LEAVE-SC01：確認對話框",
+      "banner": "測試情境：S-LEAVE-SC01｜虛構資料｜暫定色票",
+      "horizontalOverflow": false
+    },
+    {
+      "file": "04-leave-done-classroom-1024x768.png",
+      "id": "04-leave-done",
+      "size": "1024x768",
+      "what": "S-LEAVE-SC01：成功（完成，全天 v6，收據）",
+      "banner": "測試情境：S-LEAVE-SC01｜虛構資料｜暫定色票",
+      "horizontalOverflow": false
+    },
+    {
+      "file": "05-conflict-classroom-1024x768.png",
+      "id": "05-conflict",
+      "size": "1024x768",
+      "what": "兩個分頁：後送出的分頁顯示「衝突」，舊內容標示為不是最新",
+      "banner": "測試情境：S-LEAVE-SC01｜虛構資料｜暫定色票",
+      "horizontalOverflow": false
+    },
+    {
+      "file": "06-conflict-reread-classroom-1024x768.png",
+      "id": "06-conflict-reread",
+      "size": "1024x768",
+      "what": "衝突後按「重新讀取」：顯示最新內容（全天 v6），更正按鈕停用",
+      "banner": "測試情境：S-LEAVE-SC01｜虛構資料｜暫定色票",
+      "horizontalOverflow": false
+    },
+    {
+      "file": "07-deny-classroom-1024x768.png",
+      "id": "07-deny",
+      "size": "1024x768",
+      "what": "S-DENY：一般的「無法存取」",
+      "banner": "測試情境：S-DENY｜虛構資料｜暫定色票",
+      "horizontalOverflow": false
+    },
+    {
+      "file": "08-unknown-classroom-1024x768.png",
+      "id": "08-unknown",
+      "size": "1024x768",
+      "what": "［故障注入］提交已發生但回應遺失：「尚未確認」與「查詢結果」「重新送出同一操作」",
+      "banner": "測試情境：S-LEAVE-SC01｜虛構資料｜暫定色票",
+      "horizontalOverflow": false
+    },
+    {
+      "file": "09-unknown-denied-classroom-1024x768.png",
+      "id": "09-unknown-denied",
+      "size": "1024x768",
+      "what": "［故障注入］之後身分失效、重送被拒：「先前的送出結果尚未確認，目前無法存取」",
+      "banner": "測試情境：S-LEAVE-SC01｜虛構資料｜暫定色票",
+      "horizontalOverflow": false
+    }
+  ],
+  "problems": [],
+  "generatedAt": "2026-11-26",
+  "head": "2661dd2a6812e708a60fd3c2f12594c76b9d73b3",
+  "web": "identical to main ba1909f"
+}

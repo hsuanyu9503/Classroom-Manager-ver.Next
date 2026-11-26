@@ -1,14 +1,47 @@
 # HANDOFF｜目前工作與交接狀態
 
-## 目前狀態（2026-11-25）
+## 目前狀態（2026-11-26）
 
-- **W1 已合併**：PR #2 由負責人核准，`main` `e11651d`。ChatGPT R1 複審（Reviewed Head `b7458ad`）關閉 WEB2-REV-001／002。
-- 目前任務：**Windows 的啟動與停止驗證**（負責人指示，分支 `claude/w1-windows-launcher`）。詳見下方「Windows 啟動器」。
-- 上游：受控 API 固定為 `class-management-next` `1e20989`（SPEC §3）；啟動器拒絕其他版本或 `poc/stage2` 有未提交修改的 checkout。
-- 內容：
-  - `web/`：P1 點名名冊（摘要＋明細）、P2 請假紀錄與「更正為全天」、P4 送出結果（SPEC §4 狀態機）、確認對話框；
-  - `dev/`：開發用本機代理（SPEC §3 邊界）、上游檢查、情境世界、啟動器（`npm run dev -- --upstream <path> --scenario <S>`）；
-  - `test/`：代理邊界單元測試（`npm test`）、端對端驗收（`npm run e2e -- --upstream <path>`）、啟動器生命週期（`npm run launcher:test -- --upstream <path>`）。
+- 目前任務：**W1 操作與畫面驗收**（負責人指示；分支 `claude/w1-acceptance-prep`）。這一批以展示與驗收準備為主，不加新功能。
+- 基準：`main` `ba1909f`（PR #3 合併）。
+  - WEB2-REV-001～002、WEB3-REV-001～003 都已結案。
+  - 上游受控 API 固定為 `class-management-next` `1e20989`（SPEC §3）。
+- 驗收資料（`docs/acceptance/w1/`）：
+  - `SCREENS.md`：實際截圖，四種尺寸 × 9 個畫面，共 36 張，標示產生的版本；
+  - `CHECKLIST.md`：負責人的操作驗收清單；
+  - `manifest.json`：每張截圖的尺寸、頁首文字與溢出檢查。
+- 產生截圖：`npm run screens -- --upstream <path>`（`test/screens.mjs`）。
+  - 使用真正的頁面與 Emulator；需要故障的畫面使用測試專用的故障代理；網頁本身沒有測試按鈕。
+- 內容（沒有改變）：
+  - `web/`：P1 點名名冊（摘要＋明細）、P2 請假紀錄與「更正為全天」、P4 送出結果、確認對話框；
+  - `dev/`：本機代理、上游檢查、情境世界、啟動器、停止結果判定、殘留檢查；
+  - `test/`：單元測試（`npm test`）、E2E（`npm run e2e`）、啟動器生命週期（`npm run launcher:test`）、驗收截圖（`npm run screens`）。
+
+## W1 驗收：待決事項（2026-11-26）
+
+**沿用既有決定，不重複詢問**：
+- Q-1：既有網站的基準，已決定；
+- Q-3：Settings，已設定；
+- 「沒有權限」與「不存在」的畫面相同（SPEC §2.2）；
+- 不顯示姓名（SPEC §2.2）；
+- W1 不做的功能（SPEC §2.3）；
+- P／R／N／U 先顯示代碼（W1-Q1，審查已接受）。
+
+| # | 事項 | 目前作法 | 負責 |
+|---|---|---|---|
+| Q-2 | 正式色票 | 維持暫定（`web/tokens.css`），頁首標示「暫定色票」 | 負責人 |
+| AQ-1 | P／R／N／U 的中文名稱 | 顯示代碼；**不自行猜測**名稱 | 負責人 |
+| AQ-2 | 假別顯示原始代碼 `SICK-LEAVE`（本次驗收時注意到，性質同 AQ-1） | 顯示代碼；**不自行猜測**名稱 | 負責人 |
+| AQ-3 | 資訊是否清楚、按鈕是否好找、流程是否符合使用習慣 | 見 `CHECKLIST.md` 第 8 節 | 負責人實際操作 |
+| AQ-4 | 送出結果的文字（DESIGN §4 標為「草案」） | 照 DESIGN §4 的草案；畫面見 `SCREENS.md` 04、05、08、09 | 負責人 |
+
+**驗收時觀察到、請負責人判斷的地方**：這些**不是**功能缺陷，沒有改動；負責人決定之後才會提出修改。
+1. 「更正為全天」停用時（已經是全天、衝突、S-DENY），畫面沒有寫原因。
+2. 手機上，15 筆的名冊是很長的卡片清單（`SCREENS.md` 01 手機）。
+3. 平板與課堂橫向的寬度，摘要的「已登記（P+R+N）」標題會換行（01、04）。
+4. S-DENY 仍然顯示日期選單（2026-11-16）；選項是情境設定，選了也只會得到「無法存取」。
+
+**功能缺陷**：本次截圖與操作檢查沒有發現。
 
 ## Windows 啟動器（分支 `claude/w1-windows-launcher`）
 
@@ -197,3 +230,5 @@
 | 2026-11-26 | Claude | WEB3-REV-003 修正（`a03af7c`）；Linux 33/33；待 Windows 33/33 |
 | 2026-11-26 | ChatGPT → Claude | PR #3 R2（Reviewed Head `b935427`）：審查通過，WEB3-REV-001～003 結案；Windows `npm test` 33/33（審查者、負責人）；負責人 Ctrl+C CLEAN |
 | 2026-11-26 | Claude | 只更新文件（HANDOFF、WINDOWS.md）；程式和 `b935427` 相同；交負責人決定合併 |
+| 2026-11-26 | 負責人 → Claude | PR #3 合併（`ba1909f`）；W1 操作與畫面驗收準備 |
+| 2026-11-26 | Claude | 驗收截圖 36 張（`2661dd2`）、CHECKLIST、待決事項 AQ-1～4；E2E 18/18、單元 33/33（Linux） |
