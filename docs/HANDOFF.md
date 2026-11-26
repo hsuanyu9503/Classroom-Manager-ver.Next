@@ -2,12 +2,89 @@
 
 ## 目前狀態（2026-11-25）
 
-- 目前任務：**W1 實作**（分支 `claude/w1-impl`，L3 PR #2）。ChatGPT 第一輪審查（Reviewed Head `895e988`）：WEB2-REV-001、002（P2）需修正。**R1 複審（Reviewed Head `b7458ad`）：兩項都已關閉，沒有新的阻擋項**，可以交負責人決定合併。這個結論只限 Linux、本機 Emulator、虛構資料、W1，不是部署、真實資料或原生 Windows 的驗收。PR #1（文件）已由負責人核准合併，`main` `307682e`。
+- **W1 已合併**：PR #2 由負責人核准，`main` `e11651d`。ChatGPT R1 複審（Reviewed Head `b7458ad`）關閉 WEB2-REV-001／002。
+- 目前任務：**Windows 的啟動與停止驗證**（負責人指示，分支 `claude/w1-windows-launcher`）。詳見下方「Windows 啟動器」。
 - 上游：受控 API 固定為 `class-management-next` `1e20989`（SPEC §3）；啟動器拒絕其他版本或 `poc/stage2` 有未提交修改的 checkout。
 - 內容：
   - `web/`：P1 點名名冊（摘要＋明細）、P2 請假紀錄與「更正為全天」、P4 送出結果（SPEC §4 狀態機）、確認對話框；
   - `dev/`：開發用本機代理（SPEC §3 邊界）、上游檢查、情境世界、啟動器（`npm run dev -- --upstream <path> --scenario <S>`）；
-  - `test/`：代理邊界單元測試（`npm test`）、端對端驗收（`npm run e2e -- --upstream <path>`）。
+  - `test/`：代理邊界單元測試（`npm test`）、端對端驗收（`npm run e2e -- --upstream <path>`）、啟動器生命週期（`npm run launcher:test -- --upstream <path>`）。
+
+## Windows 啟動器（分支 `claude/w1-windows-launcher`）
+
+- **問題**：停止的方法原本依賴 POSIX 的程序群組與訊號，Windows 沒有這種機制，所以先前原生 Windows 直接拒絕啟動。
+- **作法**：停止改用兩個**不需要訊號**、各平台都能用的通道，並保留訊號作為補充：
+  1. **停止檔**：啟動器收到 Ctrl+C、Ctrl+Break、SIGTERM，或使用者輸入 `q` + Enter 時，建立一個暫存的停止檔；stack 每 0.3 秒檢查，看到就走正常的停止流程（關閉代理與上游 stack、清除自己擁有的 Emulator 資料）。stack 結束後，`emulators:exec` 自己關閉 Emulator。
+  2. **啟動器存活監看**：stack 監看啟動器的 PID；啟動器被直接終止時，stack 自己停止，不會留下仍在監聽的程序。
+  3. **升級**：20 秒內沒有結束時，POSIX 送 SIGINT 給整個程序群組；40 秒時，POSIX 送 SIGKILL 給群組、Windows 用 `taskkill /T /F` 終止程序樹。強制停止會明確顯示 `stopped by FORCE` 並 exit 3，不算成功。
+- 原生 Windows 的拒絕已移除。
+- **Windows 第一次執行（負責人，2026-11-26，Windows 10.0.26200，Node 26.13.1，Head `7916611`）**：
+  - A 通過；B 失敗：啟動器被終止後，8080 與 9150 在 90 秒後仍然開著，其他 port 都已關閉。
+  - 原因：
+    - Windows 上，Node（libuv）把非 detached 的子程序放進「關閉時終止」的 job object，所以啟動器一結束，firebase 也跟著被終止，來不及關閉 Firestore Emulator；
+    - firebase-tools 自己以 detached 啟動 Java 版的 Firestore Emulator（`downloadableEmulators.js` 的 `_runBinary`），所以 Java 留了下來；
+    - stack 不在這個 job 裡，所以它自己停止，18300～18400 都已關閉。
+  - 修正：firebase 在各平台都以 detached 啟動，脫離啟動器的 job；它的輸出改寫到記錄檔，由啟動器轉印到畫面，避免啟動器不在之後寫入斷掉的 pipe。
+  - 同一次的第二次執行因為上一次的殘留而無法開始，**不是**新的問題。`docs/WINDOWS.md` 已補上「清除殘留」的步驟。
+- **Windows 第二次執行（負責人，2026-11-26，同一台機器，修正後）**：
+  - 版本：負責人先執行 `git pull`，取得修正 `16f5555`。修正前 B 必定失敗，這次 B 通過，可以作為輔助判斷；但**沒有**取得 `git log -1` 的輸出。
+  - `npm run launcher:test`：**3/3**。
+    - A：首頁 200、路徑變體 404、exit 0、沒有 FORCE；
+    - B：直接終止啟動器之後，1.0 秒內所有 port 都關閉；
+    - final：所有 port 都已關閉。
+    - 結果檔：`test-results\launcher-win32-20261126T043553Z.json`（在負責人的電腦上）。
+  - 手動 Ctrl+C：`launcher: stop requested (SIGINT)` → `stack: stopping (stop requested)` → firebase 關閉 Firestore、Auth、hub、logging → **`stopped (exit 0); ports confirmed closed`**，沒有 FORCE。
+  - 證據形式：負責人提供的**截圖**，不是原始檔。
+- 驗證步驟：`docs/WINDOWS.md`。
+
+**ChatGPT 審查（Reviewed Head `02fef5a`）：需修正後複查**
+
+| 編號 | 問題 | 修正 | 證據（作者，Linux） |
+|---|---|---|---|
+| WEB3-REV-001（P2） | stack 停止時 5 秒到就 `exit(0)`，清理的錯誤也被吞掉：逾時或失敗會被當成正常停止。審查者在 Windows 以 mock 重現：卡住時約 5 秒 exit 0，沒有執行 `up.close()` | `dev/stop.mjs` 判定停止結果：<br>• `CLEAN`：exit 0；<br>• `EMULATORS_GONE`：清理失敗，但事後**確認** Emulator 的 port 已關閉，exit 0，明確分類；<br>• `STOP_TIMEOUT`：exit 4；<br>• `STOP_ERROR`、`CLEANUP_ERROR`：exit 5。<br>stack 以這個結果結束，並寫入結果檔。<br>啟動器只有在四個條件都成立時才算成功：stack 記錄成功、firebase exit 0、沒有升級、port 全關；否則顯示 `stop FAILED` 並以非零值結束 | `stop.test.mjs`：<br>• runStop 8 項；<br>• **真正的** `dev/stack.mjs` 加上注入的故障 6 項：卡住→4、拋錯→5、Emulator 仍在→5、確認已關→0。<br>舊 `stack.mjs`（`02fef5a`）跑同一組測試：6 項整合測試全部失敗，卡住時 exit 0。<br>端對端 mutation：讓清理拋錯，真正的啟動器輸出 `stop FAILED (exit 5; stack: CLEANUP_ERROR …)` |
+| WEB3-REV-002（P2） | 清除殘留的指令只憑 `java` 名稱和 port 就 `Stop-Process -Force`，可能終止無關的 Java 服務 | 新增 `dev/leftovers.mjs`：<br>• 列出 W1 port 上的程式（PID、啟動時間、完整命令列）；<br>• 以**精確的參數**判定 `OWNED`：Firestore JAR、`--project_id demo-cmn-s2b2`、這個 checkout 的 `--rules`；或這個 checkout 的 firebase-tools、stack；<br>• `--stop` 在執行的當下重新核對 PID、啟動時間、port、擁有權，只停止一個 PID。<br>`WINDOWS.md` 與測試的提示都改用它 | `leftovers.test.mjs` 7 項：其中「專案名稱的前綴」這個漏洞是測試抓到後才修正的。<br>Linux 實際執行：<br>• 三個 W1 程式都是 OWNED；<br>• 錯誤或缺少啟動時間 → REFUSED；<br>• 模擬「孤兒 Firestore」：OWNED，停止並確認；<br>• 模擬「無關的 Java 在 9150」：NOT_OWNED，拒絕停止，它繼續執行 |
+
+- 本輪測試（作者，Linux，Head `574c354`，工作目錄乾淨）：
+  - `npm test` 33/33；
+  - `launcher:test` 4/4：A、C 要求 `stack cleanup: CLEAN`；B 要求 stack 記錄的結果是 `CLEAN`（`trigger: launcher gone`）。
+- **未執行**：修正後在 Windows 上重跑；Windows 上的 `leftovers.mjs`（PowerShell 的查詢）**只經人工檢視**。
+
+**R1 複審（Reviewed Head `b5f0cbb`）**：WEB3-REV-001、002 的修正可以接受；新增 WEB3-REV-003（P2）。
+
+- **WEB3-REV-003**：`test/stop.test.mjs` 把 `C:\...` 的絕對路徑直接傳給 `--import`；Windows 的 ESM loader 把它當成 `c:` URL scheme，結果 `ERR_UNSUPPORTED_ESM_URL_SCHEME`。審查者在 Windows 的結果是 27/33：6 項真正 stack 的故障注入在載入階段就失敗，沒有執行到停止判定。
+  - 修正（`a03af7c`）：改用 `pathToFileURL(...).href`。只改測試，程式沒有改。
+  - Linux：33/33（作者）。
+  - **R2 收尾審查（Reviewed Head `b935427`）：審查通過**；WEB3-REV-001、002、003 **全部結案**。結論只限本機 W1 的開發與驗收工具。
+  - `b935427` 的 Windows `npm test`：
+    - **審查者**獨立執行 33/33（0 fail、0 skipped、exit 0）；
+    - **負責人**（`git log -1` 確認是 `b935427`）也是 33/33。
+    - 6 項真正 stack 的故障注入都實際執行並通過：CLEAN／0、STOP_TIMEOUT／4 兩項、STOP_ERROR／5、CLEANUP_ERROR／5、EMULATORS_GONE／0。
+  - `b935427` 的手動 Ctrl+C（負責人，終端紀錄）：`stack: stop CLEAN` → `stopped (exit 0); ports confirmed closed; stack cleanup: CLEAN`。
+- **負責人 Windows 第三次執行**（R1 Head `b5f0cbb`）：
+  - 原始 JSON：`launcher-win32-20261126T045618Z.json`，由審查者核對；
+  - head 完整等於 `b5f0cbbb7e6d3f853588b3c5e77d10b99ada7093`，dirty 是空字串，上游是 `1e20989`，Windows 10.0.26200，Node 26.13.1；
+  - A：exit 0、`CLEAN`、沒有 FORCE、所有 port 關閉；
+  - B：結果記錄為 `CLEAN`，約 1 秒後所有 port 關閉；
+  - final 通過，合計 **3/3**；
+  - `leftovers.mjs` 列出模式：`LEFTOVERS none`（截圖）；
+  - C（手動 Ctrl+C）在這份 JSON 中是 MANUAL／null；`b5f0cbb` 的 Ctrl+C 沒有驗證。之後在 `b935427` 由負責人驗證（見上）。
+  - `a03af7c` 只改測試的 import，啟動器與 stack 都沒有改，所以這次的 3/3 沿用，**來源版本是 `b5f0cbb`**，不回填成 `b935427`。
+- 審查者的判定：OWNED 代表命令列符合這套 W1 設定，**不是**密碼學或每次執行專屬的擁有權證明；同一個 checkout 的另一次 W1 執行也會符合。這是使用者明確指定 PID 的本機開發清理工具，不是對抗惡意程序的安全邊界。
+
+**測試結果**
+
+- **已通過：作者執行**（Linux 雲端環境，Node 22.23.5）
+  - `npm run launcher:test`：4/4。A 用 `q` + Enter，走停止檔通道；B 直接終止啟動器（SIGKILL），走存活監看；C 用 SIGINT；最後確認所有 port 都已關閉。三個案例執行中都確認首頁 200、路徑變體 404。A、B 用的正是 Windows 依靠的兩個通道。
+  - Mutation：停用存活監看後，B 失敗，9 個 port 在 90 秒後仍然開著，證明測試能抓到殘留。之後已清除殘留程序。
+  - `npm test`：12/12。
+  - 修正 B 之後（記錄檔轉印、firebase detached）：Linux 4/4。
+- **負責人在 Windows 執行**（截圖）：第一次 A 通過、B 失敗；修正後 3/3，手動 Ctrl+C 也通過。見上方。
+- **未執行**
+  - Windows 上的 E2E；強制停止（FORCE）與 `taskkill` 升級；
+  - macOS、WSL；
+  - 升級（FORCE）路徑：Linux 上也沒有觸發。
+- **只經人工檢視**：`docs/WINDOWS.md` 的步驟。
+- **沒有重跑**：E2E。E2E 不使用 launcher／stack，`world.mjs`、頁面、代理都沒有改。
 
 ## W1 實作的待審事項（ChatGPT 第一輪已答覆）
 
@@ -16,7 +93,7 @@
 | W1-Q1 | P／R／N／U 在規格中沒有中文名稱 | 頁面直接顯示代碼；摘要另列「已到（P+R）」「已登記（P+R+N）」 | 可接受；名稱待負責人決定，不自行猜 |
 | W1-Q2 | 目標 ID 寫在 `web/app.js` 的 `TARGETS` | 情境設定，不是測資；都是上游 Stage 1 的虛構 ID | 可接受；`/scenario.json` 已明列在 SPEC §3 |
 | W1-Q3 | 色彩 | `web/tokens.css` 的**暫定**值，頁首標示「暫定色票」 | 可接受；正式色票仍待 Q-2，未完成正式視覺驗收 |
-| W1-Q4 | 啟動器 | **只供開發**；以程序群組停止，結束後確認 port 已關閉 | 可接受；**不等於**跨平台已驗證。Windows 現在明確拒絕啟動，其他非 Linux 平台會提示 |
+| W1-Q4 | 啟動器 | **只供開發**；以程序群組停止，結束後確認 port 已關閉 | 可接受；**不等於**跨平台已驗證。PR #2 當時：Windows 明確拒絕啟動。之後的變更見上方「Windows 啟動器」 |
 
 ## 第一輪審查的修正（2026-11-25）
 
@@ -55,7 +132,7 @@
 
 **未執行**
 
-- Windows、macOS、WSL 的啟動器與 E2E。原生 Windows 會**拒絕啟動**（R1 由審查者確認）：這是揭露平台限制，**不是**完成 Windows 支援。如果要讓負責人在 Windows 上直接看網站，要先安排相容的啟動與停止驗證，或確認可用的 Linux／WSL 環境；
+- （PR #2 當時）Windows、macOS、WSL 的啟動器與 E2E。原生 Windows 會**拒絕啟動**（R1 由審查者確認）：這是揭露平台限制，**不是**完成 Windows 支援。如果要讓負責人在 Windows 上直接看網站，要先安排相容的啟動與停止驗證，或確認可用的 Linux／WSL 環境；
 - Firefox、WebKit；實體手機、平板與螢幕閱讀器；
 - `denied`、`invalid`、`error` 三個送出狀態沒有在 E2E 中觸發（標籤只經人工檢視原始碼）；
 - 上游需要 Emulator 的套件（`s2:cases`、`s2:b3`、`s2:b4`）：依 SPEC §6.1 第 4 點不例行執行；
@@ -109,3 +186,14 @@
 | 2026-11-25 | Claude → ChatGPT | 修正 WEB2-REV-001、002；代理測試 12/12、E2E 18/18；兩項修正都以舊程式重現失敗 |
 | 2026-11-25 | ChatGPT → Claude | PR #2 R1（Reviewed Head `b7458ad`）：WEB2-REV-001、002 關閉；可以交負責人決定合併。備註：舊 proxy 的 mutation 紀錄不完整、原生 Windows 只是拒絕、`denied`／`invalid`／`error` 沒有觸發 |
 | 2026-11-25 | Claude | 只更新 HANDOFF（記錄 R1 結果；重新取得單次的舊 proxy mutation 紀錄）。程式與測試和 `b7458ad` 相同 |
+| 2026-11-25 | 負責人 → Claude | 合併 PR #2（`e11651d`）；補上 Windows 的啟動與停止驗證；上游文件開 PR（class-management-next #23） |
+| 2026-11-25 | Claude | Windows 啟動器：停止檔與存活監看；`launcher:test`（Linux 4/4，含 mutation）；`docs/WINDOWS.md`。**Windows 上尚未執行** |
+| 2026-11-26 | 負責人 → Claude | Windows 第一次執行：A 通過、B 失敗（Java 版 Firestore Emulator 殘留在 8080／9150） |
+| 2026-11-26 | Claude | 修正：firebase 以 detached 啟動、輸出改寫記錄檔；Linux 4/4；待 Windows 重跑 |
+| 2026-11-26 | 負責人 → Claude | Windows 第二次執行（修正後）：`launcher:test` 3/3、手動 Ctrl+C 通過（截圖） |
+| 2026-11-26 | ChatGPT → Claude | PR #3 審查（Reviewed Head `02fef5a`）：WEB3-REV-001、002（P2） |
+| 2026-11-26 | Claude → ChatGPT | 修正 WEB3-REV-001、002（Head `574c354`）；Linux 33/33、4/4；待 Windows 重跑與複審 |
+| 2026-11-26 | ChatGPT → Claude | PR #3 R1（Reviewed Head `b5f0cbb`）：REV-001／002 可以接受；WEB3-REV-003（Windows `--import`）；負責人 Windows 3/3（原始 JSON，對應 `b5f0cbb`） |
+| 2026-11-26 | Claude | WEB3-REV-003 修正（`a03af7c`）；Linux 33/33；待 Windows 33/33 |
+| 2026-11-26 | ChatGPT → Claude | PR #3 R2（Reviewed Head `b935427`）：審查通過，WEB3-REV-001～003 結案；Windows `npm test` 33/33（審查者、負責人）；負責人 Ctrl+C CLEAN |
+| 2026-11-26 | Claude | 只更新文件（HANDOFF、WINDOWS.md）；程式和 `b935427` 相同；交負責人決定合併 |

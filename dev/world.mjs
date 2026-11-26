@@ -14,6 +14,8 @@ export const SCENARIOS = Object.freeze({
   'S-LEAVE-SC01': 'ACTOR-SC01-TEACHER',
   'S-DENY': 'ACTOR-OTHER',
 });
+/** Firestore and Auth emulator ports, as in the upstream poc/stage2/firebase.json (also in UPSTREAM_PORTS). */
+export const EMULATOR_PORTS = Object.freeze([8080, 9099]);
 export const WEB_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'web');
 export const STATIC_FILES = Object.freeze({ '/': 'index.html', '/index.html': 'index.html', '/style.css': 'style.css', '/tokens.css': 'tokens.css', '/app.js': 'app.js' });
 
@@ -27,6 +29,7 @@ export async function openUpstream(stage2) {
   const { makeMasker } = await U('src/mask.mjs');
   const { fixtureNames } = await U('src/world.mjs');
   const { createHarness, PORTS } = await U('src/harness.mjs');
+  const { portState } = await U('src/port-state.mjs');
   const cfg = assertLocalConfig(process.env, { firebaseJsonPath: path.join(stage2, 'firebase.json') });
   const nonce = assertNonce(process.env.RUN_NONCE);
   const fsc = firestoreClient(cfg); const au = authClient(cfg);
@@ -41,6 +44,8 @@ export async function openUpstream(stage2) {
     h, cfg, PORTS, names, fixtures,
     /** owned cleanup at the end of the run */
     close: async () => { assertStillOwned(await h.markerIds(), nonce); await fsc.clearAll(); await au.clearAll(); },
+    /** true only if the Firestore and Auth emulator ports (upstream firebase.json) are confirmed closed */
+    emulatorsGone: async () => { for (const p of EMULATOR_PORTS) { if ((await portState(p)).state !== 'closed') return false; } return true; },
   };
 }
 

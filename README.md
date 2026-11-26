@@ -7,7 +7,10 @@ npm install
 npm test                                              # 本機代理的邊界測試
 npm run dev -- --upstream <class-management-next 1e20989 的 checkout> --scenario S-LEAVE-SC01
 npm run e2e -- --upstream <同上>                      # 端對端驗收
+npm run launcher:test -- --upstream <同上>            # 啟動器的啟動與停止驗證
 ```
+
+Windows：見 `docs/WINDOWS.md`。
 
 情境：`S-ROSTER-A17`、`S-LEAVE-SC01`、`S-DENY`。上游 checkout 需在 `poc/stage2` 執行過 `npm ci`。
 
