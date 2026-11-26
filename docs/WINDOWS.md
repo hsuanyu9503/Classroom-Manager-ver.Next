@@ -24,6 +24,7 @@ winget install EclipseAdoptium.Temurin.21.JDK
 路徑可以自己決定；下面用 `C:\cmn` 作例子。
 
 ```powershell
+mkdir C:\cmn
 cd C:\cmn
 git clone https://github.com/hsuanyu9503/class-management-next.git cmn-1e20989
 cd cmn-1e20989
