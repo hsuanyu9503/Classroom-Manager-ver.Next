@@ -56,13 +56,15 @@ npm run launcher:test -- --upstream C:\cmn\cmn-1e20989
 | C | Ctrl+C | Windows 不能用程式送出 Ctrl+C，列為 **MANUAL**，見第 4 節 |
 
 - 每個案例執行中都會檢查：首頁回應 200；路徑變體 `/extra/../v1/read` 回應 404。
-- 最後一行是 `LAUNCHER_LIFECYCLE ok=true checks=4/4 ...`（C 不計入）。結果 JSON 在 `test-results\launcher-win32-*.json`。
+- 最後一行是 `LAUNCHER_LIFECYCLE ok=true checks=3/3 ...`：A、B 和最後的 port 檢查；C 是 MANUAL，不計入。結果 JSON 在 `test-results\launcher-win32-*.json`。
 
 ## 4. 手動驗證：Ctrl+C
 
 ```powershell
-npm run dev -- --upstream C:\cmn\cmn-1e20989 --scenario S-LEAVE-SC01
+node dev\launcher.mjs --upstream C:\cmn\cmn-1e20989 --scenario S-LEAVE-SC01
 ```
+
+這裡直接用 `node` 啟動，不經過 `npm run`：透過 `npm run` 時，按 Ctrl+C 後 Windows 可能會問「終止批次工作 (Y/N)?」，蓋掉最後的訊息。
 
 1. 看到 `W1 ready` 後，用瀏覽器打開 http://127.0.0.1:18400/，確認頁面出現。
 2. 回到終端機按 **Ctrl+C**。

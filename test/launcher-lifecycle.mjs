@@ -83,7 +83,7 @@ try {
       'C: SIGINT to the launcher (Ctrl+C) → graceful stop, exit 0, no force, every port closed', `exit=${JSON.stringify(e)} ports=${JSON.stringify(ports)}`);
   } else {
     log(null, 'C: Ctrl+C on Windows cannot be sent from a script — check by hand',
-      'run `npm run dev -- --upstream <path> --scenario S-LEAVE-SC01` in a terminal, open http://127.0.0.1:18400/, press Ctrl+C: expect "stopped (exit 0); ports confirmed closed" (not FORCE)');
+      'run `node dev\\launcher.mjs --upstream <path> --scenario S-LEAVE-SC01` in a terminal, open http://127.0.0.1:18400/, press Ctrl+C: expect "stopped (exit 0); ports confirmed closed" (not FORCE)');
   }
 } catch (e) {
   log(false, 'lifecycle aborted', String(e.stack || e).split('\n').slice(0, 6).join(' | '));
