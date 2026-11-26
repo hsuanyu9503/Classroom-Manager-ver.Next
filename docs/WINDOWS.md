@@ -3,7 +3,8 @@
 > 只供開發與驗收。只用虛構測資、只連本機的 Firebase Emulator、**不部署**。
 > **目前的驗證狀態**（詳見 `docs/HANDOFF.md`）：
 > - 已在 Windows 驗證（負責人，2026-11-26，Windows 10.0.26200，Node 26.13.1，**截圖**）：`launcher:test` 3/3（A、B、final）、手動 Ctrl+C 正常停止。驗證的是修正 B 之後的版本，但截圖沒有包含 commit SHA。
-> - WEB3-REV-001／002 修正之後（停止結果的判定、清除殘留的工具），**還沒有**在 Windows 重跑。
+> - WEB3-REV-001／002 修正之後（Head `b5f0cbb`，負責人，原始 JSON）：`launcher:test` 3/3；`leftovers.mjs` 列出模式顯示 `LEFTOVERS none`。這個版本的手動 Ctrl+C **沒有**驗證。
+> - `npm test`（33 項）在 Windows：WEB3-REV-003 修正後待重跑。
 > - 沒有驗證：Windows 上的 E2E、強制停止（FORCE）與 `taskkill`、macOS、WSL。
 
 ## 1. 需要的軟體
@@ -107,6 +108,14 @@ node dev\launcher.mjs --upstream C:\cmn\cmn-1e20989 --scenario S-LEAVE-SC01
    - 如果看到 `REFUSED: ports not confirmed closed`，代表有殘留：照上面「清除殘留」處理，並回報該訊息。
 
 停止的方法：Ctrl+C、Ctrl+Break，或輸入 `q` + Enter。重設資料＝停止後重新啟動。
+
+## 4b. 單元測試（不需要 Emulator）
+
+```powershell
+npm.cmd test
+```
+
+最後應該是 `# pass 33`、`# fail 0`。
 
 ## 5. 選擇性：端對端驗收
 

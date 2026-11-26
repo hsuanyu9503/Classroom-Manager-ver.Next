@@ -49,6 +49,22 @@
   - `launcher:test` 4/4：A、C 要求 `stack cleanup: CLEAN`；B 要求 stack 記錄的結果是 `CLEAN`（`trigger: launcher gone`）。
 - **未執行**：修正後在 Windows 上重跑；Windows 上的 `leftovers.mjs`（PowerShell 的查詢）**只經人工檢視**。
 
+**R1 複審（Reviewed Head `b5f0cbb`）**：WEB3-REV-001、002 的修正可以接受；新增 WEB3-REV-003（P2）。
+
+- **WEB3-REV-003**：`test/stop.test.mjs` 把 `C:\...` 的絕對路徑直接傳給 `--import`；Windows 的 ESM loader 把它當成 `c:` URL scheme，結果 `ERR_UNSUPPORTED_ESM_URL_SCHEME`。審查者在 Windows 的結果是 27/33：6 項真正 stack 的故障注入在載入階段就失敗，沒有執行到停止判定。
+  - 修正（`a03af7c`）：改用 `pathToFileURL(...).href`。只改測試，程式沒有改。
+  - Linux：33/33（作者）。**Windows 的 33/33 待負責人重跑。**
+- **負責人 Windows 第三次執行**（R1 Head `b5f0cbb`）：
+  - 原始 JSON：`launcher-win32-20261126T045618Z.json`，由審查者核對；
+  - head 完整等於 `b5f0cbbb7e6d3f853588b3c5e77d10b99ada7093`，dirty 是空字串，上游是 `1e20989`，Windows 10.0.26200，Node 26.13.1；
+  - A：exit 0、`CLEAN`、沒有 FORCE、所有 port 關閉；
+  - B：結果記錄為 `CLEAN`，約 1 秒後所有 port 關閉；
+  - final 通過，合計 **3/3**；
+  - `leftovers.mjs` 列出模式：`LEFTOVERS none`（截圖）；
+  - C（手動 Ctrl+C）在這份 JSON 中是 MANUAL／null。**R1 Head 的手動 Ctrl+C 沒有驗證**；先前的成功截圖屬於 R1 之前的版本，只是歷史證據。
+  - `a03af7c` 只改測試的 import，啟動器與 stack 都沒有改，所以這次的 3/3 沿用，來源版本是 `b5f0cbb`。
+- 審查者的判定：OWNED 代表命令列符合這套 W1 設定，**不是**密碼學或每次執行專屬的擁有權證明；同一個 checkout 的另一次 W1 執行也會符合。這是使用者明確指定 PID 的本機開發清理工具，不是對抗惡意程序的安全邊界。
+
 **測試結果**
 
 - **已通過：作者執行**（Linux 雲端環境，Node 22.23.5）
@@ -171,3 +187,5 @@
 | 2026-11-26 | 負責人 → Claude | Windows 第二次執行（修正後）：`launcher:test` 3/3、手動 Ctrl+C 通過（截圖） |
 | 2026-11-26 | ChatGPT → Claude | PR #3 審查（Reviewed Head `02fef5a`）：WEB3-REV-001、002（P2） |
 | 2026-11-26 | Claude → ChatGPT | 修正 WEB3-REV-001、002（Head `574c354`）；Linux 33/33、4/4；待 Windows 重跑與複審 |
+| 2026-11-26 | ChatGPT → Claude | PR #3 R1（Reviewed Head `b5f0cbb`）：REV-001／002 可以接受；WEB3-REV-003（Windows `--import`）；負責人 Windows 3/3（原始 JSON，對應 `b5f0cbb`） |
+| 2026-11-26 | Claude | WEB3-REV-003 修正（`a03af7c`）；Linux 33/33；待 Windows 33/33 |
