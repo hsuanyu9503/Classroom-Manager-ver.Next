@@ -53,7 +53,13 @@
 
 - **WEB3-REV-003**：`test/stop.test.mjs` 把 `C:\...` 的絕對路徑直接傳給 `--import`；Windows 的 ESM loader 把它當成 `c:` URL scheme，結果 `ERR_UNSUPPORTED_ESM_URL_SCHEME`。審查者在 Windows 的結果是 27/33：6 項真正 stack 的故障注入在載入階段就失敗，沒有執行到停止判定。
   - 修正（`a03af7c`）：改用 `pathToFileURL(...).href`。只改測試，程式沒有改。
-  - Linux：33/33（作者）。**Windows 的 33/33 待負責人重跑。**
+  - Linux：33/33（作者）。
+  - **R2 收尾審查（Reviewed Head `b935427`）：審查通過**；WEB3-REV-001、002、003 **全部結案**。結論只限本機 W1 的開發與驗收工具。
+  - `b935427` 的 Windows `npm test`：
+    - **審查者**獨立執行 33/33（0 fail、0 skipped、exit 0）；
+    - **負責人**（`git log -1` 確認是 `b935427`）也是 33/33。
+    - 6 項真正 stack 的故障注入都實際執行並通過：CLEAN／0、STOP_TIMEOUT／4 兩項、STOP_ERROR／5、CLEANUP_ERROR／5、EMULATORS_GONE／0。
+  - `b935427` 的手動 Ctrl+C（負責人，終端紀錄）：`stack: stop CLEAN` → `stopped (exit 0); ports confirmed closed; stack cleanup: CLEAN`。
 - **負責人 Windows 第三次執行**（R1 Head `b5f0cbb`）：
   - 原始 JSON：`launcher-win32-20261126T045618Z.json`，由審查者核對；
   - head 完整等於 `b5f0cbbb7e6d3f853588b3c5e77d10b99ada7093`，dirty 是空字串，上游是 `1e20989`，Windows 10.0.26200，Node 26.13.1；
@@ -61,8 +67,8 @@
   - B：結果記錄為 `CLEAN`，約 1 秒後所有 port 關閉；
   - final 通過，合計 **3/3**；
   - `leftovers.mjs` 列出模式：`LEFTOVERS none`（截圖）；
-  - C（手動 Ctrl+C）在這份 JSON 中是 MANUAL／null。**R1 Head 的手動 Ctrl+C 沒有驗證**；先前的成功截圖屬於 R1 之前的版本，只是歷史證據。
-  - `a03af7c` 只改測試的 import，啟動器與 stack 都沒有改，所以這次的 3/3 沿用，來源版本是 `b5f0cbb`。
+  - C（手動 Ctrl+C）在這份 JSON 中是 MANUAL／null；`b5f0cbb` 的 Ctrl+C 沒有驗證。之後在 `b935427` 由負責人驗證（見上）。
+  - `a03af7c` 只改測試的 import，啟動器與 stack 都沒有改，所以這次的 3/3 沿用，**來源版本是 `b5f0cbb`**，不回填成 `b935427`。
 - 審查者的判定：OWNED 代表命令列符合這套 W1 設定，**不是**密碼學或每次執行專屬的擁有權證明；同一個 checkout 的另一次 W1 執行也會符合。這是使用者明確指定 PID 的本機開發清理工具，不是對抗惡意程序的安全邊界。
 
 **測試結果**
@@ -189,3 +195,5 @@
 | 2026-11-26 | Claude → ChatGPT | 修正 WEB3-REV-001、002（Head `574c354`）；Linux 33/33、4/4；待 Windows 重跑與複審 |
 | 2026-11-26 | ChatGPT → Claude | PR #3 R1（Reviewed Head `b5f0cbb`）：REV-001／002 可以接受；WEB3-REV-003（Windows `--import`）；負責人 Windows 3/3（原始 JSON，對應 `b5f0cbb`） |
 | 2026-11-26 | Claude | WEB3-REV-003 修正（`a03af7c`）；Linux 33/33；待 Windows 33/33 |
+| 2026-11-26 | ChatGPT → Claude | PR #3 R2（Reviewed Head `b935427`）：審查通過，WEB3-REV-001～003 結案；Windows `npm test` 33/33（審查者、負責人）；負責人 Ctrl+C CLEAN |
+| 2026-11-26 | Claude | 只更新文件（HANDOFF、WINDOWS.md）；程式和 `b935427` 相同；交負責人決定合併 |

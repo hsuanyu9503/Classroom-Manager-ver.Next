@@ -4,7 +4,7 @@
 > **目前的驗證狀態**（詳見 `docs/HANDOFF.md`）：
 > - 已在 Windows 驗證（負責人，2026-11-26，Windows 10.0.26200，Node 26.13.1，**截圖**）：`launcher:test` 3/3（A、B、final）、手動 Ctrl+C 正常停止。驗證的是修正 B 之後的版本，但截圖沒有包含 commit SHA。
 > - WEB3-REV-001／002 修正之後（Head `b5f0cbb`，負責人，原始 JSON）：`launcher:test` 3/3；`leftovers.mjs` 列出模式顯示 `LEFTOVERS none`。這個版本的手動 Ctrl+C **沒有**驗證。
-> - `npm test`（33 項）在 Windows：WEB3-REV-003 修正後待重跑。
+> - Head `b935427`：Windows `npm test` 33/33（審查者、負責人各自執行）；手動 Ctrl+C 正常停止，`stack cleanup: CLEAN`（負責人）。啟動與停止的 3/3 沿用 `b5f0cbb` 的原始 JSON，這段之後沒有改執行程式。
 > - 沒有驗證：Windows 上的 E2E、強制停止（FORCE）與 `taskkill`、macOS、WSL。
 
 ## 1. 需要的軟體
