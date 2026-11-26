@@ -12,7 +12,8 @@
     "dev": "node dev/launcher.mjs",
     "e2e": "node test/run-e2e.mjs",
     "launcher:test": "node test/launcher-lifecycle.mjs",
-    "leftovers": "node dev/leftovers.mjs"
+    "leftovers": "node dev/leftovers.mjs",
+    "screens": "node test/run-e2e.mjs --script screens"
   },
   "devDependencies": {
     "playwright": "1.63.0"
