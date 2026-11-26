@@ -7,7 +7,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { runStop, STOP_EXIT, STOP_TIMEOUT_MS } from '../dev/stop.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -56,7 +56,7 @@ function runStack(mode) {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'cmn-w1-stoptest-'));
   const resultFile = path.join(dir, 'stop-result.json');
   return new Promise((resolve) => {
-    const p = spawn(process.execPath, ['--import', path.join(HERE, 'fixtures', 'register-mock-world.mjs'), path.join(HERE, '..', 'dev', 'stack.mjs')], {
+    const p = spawn(process.execPath, ['--import', pathToFileURL(path.join(HERE, 'fixtures', 'register-mock-world.mjs')).href, path.join(HERE, '..', 'dev', 'stack.mjs')], {
       env: { ...process.env, MOCK_STOP: mode, CMN_SCENARIO: 'S-LEAVE-SC01', CMN_WEB_PORT: '0', CMN_LAUNCHER_PID: String(deadPid()), CMN_STOP_RESULT: resultFile, CMN_STOP_FILE: '' },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
