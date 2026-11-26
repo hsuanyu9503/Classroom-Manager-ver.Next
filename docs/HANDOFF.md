@@ -26,6 +26,15 @@
     - stack 不在這個 job 裡，所以它自己停止，18300～18400 都已關閉。
   - 修正：firebase 在各平台都以 detached 啟動，脫離啟動器的 job；它的輸出改寫到記錄檔，由啟動器轉印到畫面，避免啟動器不在之後寫入斷掉的 pipe。
   - 同一次的第二次執行因為上一次的殘留而無法開始，**不是**新的問題。`docs/WINDOWS.md` 已補上「清除殘留」的步驟。
+- **Windows 第二次執行（負責人，2026-11-26，同一台機器，修正後）**：
+  - 版本：負責人先執行 `git pull`，取得修正 `16f5555`。修正前 B 必定失敗，這次 B 通過，可以作為輔助判斷；但**沒有**取得 `git log -1` 的輸出。
+  - `npm run launcher:test`：**3/3**。
+    - A：首頁 200、路徑變體 404、exit 0、沒有 FORCE；
+    - B：直接終止啟動器之後，1.0 秒內所有 port 都關閉；
+    - final：所有 port 都已關閉。
+    - 結果檔：`test-results\launcher-win32-20261126T043553Z.json`（在負責人的電腦上）。
+  - 手動 Ctrl+C：`launcher: stop requested (SIGINT)` → `stack: stopping (stop requested)` → firebase 關閉 Firestore、Auth、hub、logging → **`stopped (exit 0); ports confirmed closed`**，沒有 FORCE。
+  - 證據形式：負責人提供的**截圖**，不是原始檔。
 - 驗證步驟：`docs/WINDOWS.md`。
 
 **測試結果**
@@ -35,9 +44,9 @@
   - Mutation：停用存活監看後，B 失敗，9 個 port 在 90 秒後仍然開著，證明測試能抓到殘留。之後已清除殘留程序。
   - `npm test`：12/12。
   - 修正 B 之後（記錄檔轉印、firebase detached）：Linux 4/4。
-- **負責人在 Windows 執行**：見上方第一次執行。A 通過，表示停止檔、`cmd.exe` 的引號處理、首頁 200、路徑變體 404 在 Windows 都正常。
+- **負責人在 Windows 執行**（截圖）：第一次 A 通過、B 失敗；修正後 3/3，手動 Ctrl+C 也通過。見上方。
 - **未執行**
-  - **修正後**在 Windows 上的 B 與手動 Ctrl+C；`taskkill` 升級；
+  - Windows 上的 E2E；強制停止（FORCE）與 `taskkill` 升級；
   - macOS、WSL；
   - 升級（FORCE）路徑：Linux 上也沒有觸發。
 - **只經人工檢視**：`docs/WINDOWS.md` 的步驟。
@@ -147,3 +156,4 @@
 | 2026-11-25 | Claude | Windows 啟動器：停止檔與存活監看；`launcher:test`（Linux 4/4，含 mutation）；`docs/WINDOWS.md`。**Windows 上尚未執行** |
 | 2026-11-26 | 負責人 → Claude | Windows 第一次執行：A 通過、B 失敗（Java 版 Firestore Emulator 殘留在 8080／9150） |
 | 2026-11-26 | Claude | 修正：firebase 以 detached 啟動、輸出改寫記錄檔；Linux 4/4；待 Windows 重跑 |
+| 2026-11-26 | 負責人 → Claude | Windows 第二次執行（修正後）：`launcher:test` 3/3、手動 Ctrl+C 通過（截圖） |
