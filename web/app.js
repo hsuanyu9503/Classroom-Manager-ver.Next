@@ -274,6 +274,8 @@
     $('gate').dataset.kind = kind;
     $('gateTitle').textContent = G[0];
     const kids = [el('p', { textContent: G[1] })];
+    // the account's Firebase UID (an identifier, not a secret) so the owner can bind it with server/admin.mjs
+    if (kind === 'noAccess' && user) kids.push(el('p', { className: 'gate-uid' }, '提供給管理者的帳號識別碼（UID）：', el('code', { id: 'gateUid', textContent: user.uid })));
     if (kind === 'login' && loginNotice) kids.unshift(el('p', { className: 'gate-notice', id: 'loginNotice', textContent: loginNotice }));
     $('gateBody').replaceChildren(...kids);
     $('gateActions').replaceChildren(...G[2]);
@@ -296,6 +298,7 @@
     $('p1Body').replaceChildren(); $('p2Body').replaceChildren(); $('statusRegion').replaceChildren(); $('statusActions').replaceChildren();
     $('statusRegion').dataset.state = 'idle'; $('p4').dataset.state = 'idle';
     $('devScope').textContent = '班級：尚未選擇。';
+    $('classOnly').textContent = ''; show('classBar', false);
     $('sessionSelect').replaceChildren(); $('classSelect').replaceChildren();
     show('p4', false); show('p2', false); show('reviseBox', false); $('dateField').hidden = false;
     document.body.classList.remove('has-leave');
@@ -336,7 +339,9 @@
     if (!acc.length) { showGate('noAccess'); return; }
     const sel = $('classSelect'); sel.replaceChildren();
     for (const c of acc) sel.append(el('option', { value: c.scope.classId, textContent: c.scope.classId }));
-    show('classBar', acc.length > 1);
+    show('classBar', true);                              // always show which class this account is using
+    sel.hidden = acc.length === 1; $('classOnly').hidden = acc.length !== 1;
+    $('classOnly').textContent = `${acc[0].scope.classId}（工作空間 ${acc[0].scope.workspaceId}）`;
     const pick = (op && acc.find((c) => c.scope.classId === op.scope.classId)) || acc[0];
     sel.value = pick.scope.classId;
     await selectClass(pick);
@@ -436,8 +441,9 @@
   async function initLogin(conf) {
     mode = 'login'; loginConf = conf;
     $('accountCancel').addEventListener('click', () => $('accountDialog').close());
-    $('scenarioBanner').textContent = '登入模式：Google（本機 Auth Emulator）｜虛構資料｜暫定色票';
+    $('scenarioBanner').textContent = conf.authEmulator ? '登入模式：Google 模擬登入（本機 Auth Emulator）｜虛構資料｜暫定色票' : `登入模式：Google（開發用 Firebase 專案 ${conf.projectLabel || ''}）｜虛構資料｜暫定色票`;
     $('devLogin').hidden = false;
+    if (!conf.authEmulator) $('devLogin').textContent = '登入使用真實的 Google 帳號（開發用 Firebase 專案）。登入只確認身分；能看哪個班級，由後端的授權綁定決定。登入狀態由 Firebase SDK 保存在這個分頁的 sessionStorage，關閉分頁就會登出。資料仍然只有虛構測資。';
     $('logoutButton').addEventListener('click', logout);
     $('classSelect').addEventListener('change', () => { const c = LOGIN_CLASSES.find((x) => x.scope.classId === $('classSelect').value); if (c && op === null) selectClass(c); });
     showGate('checking');

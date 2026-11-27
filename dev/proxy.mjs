@@ -27,8 +27,16 @@ export const API_PATHS = Object.freeze(['/v1/read', '/v1/commit', '/v1/receipt']
 export const MAX_BODY = 64 * 1024;
 const STATIC_TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8' };
 const BASE_HEADERS = { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' };
-/** CSP. Login mode additionally lets the page reach the Auth Emulator (sign-in REST + the sign-in iframe). */
-export const csp = (authOrigin = null) => `default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'${authOrigin ? ` ${authOrigin}` : ''}; img-src 'self'; frame-src ${authOrigin || "'none'"}; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`;
+/** CSP. Emulator login mode additionally lets the page reach the Auth Emulator (sign-in REST + iframe).
+ *  REAL Google sign-in (SPEC §12.3, L-3) needs Google's sign-in hosts: the SDK's popup loads apis.google.com and an
+ *  iframe from the project's authDomain, and calls identitytoolkit / securetoken. Nothing else is allowed. */
+export const csp = (authOrigin = null, realAuthDomain = null) => {
+  if (realAuthDomain) {
+    return `default-src 'self'; script-src 'self' https://apis.google.com; style-src 'self'; connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com; img-src 'self'; frame-src https://${realAuthDomain} https://apis.google.com; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`;
+  }
+  return `default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'${authOrigin ? ` ${authOrigin}` : ''}; img-src 'self'; frame-src ${authOrigin || "'none'"}; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`;
+};
+const AUTH_DOMAIN_RE = /^[a-z0-9][a-z0-9-]{3,61}\.(firebaseapp\.com|web\.app)$/;
 /** the page's own token: one Bearer credential of JWT characters (emulator tokens have an empty signature) */
 const PAGE_BEARER_RE = /^Bearer [A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*$/;
 
@@ -43,13 +51,23 @@ const PAGE_BEARER_RE = /^Bearer [A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*$/
 export function createWebProxy({ port, upstream, token, scenario, webRoot, staticFiles, login = null }) {
   const up = new URL(upstream);
   if (up.protocol !== 'http:' || up.hostname !== '127.0.0.1') throw new Error('proxy: upstream must be http://127.0.0.1:<port>');
+  let realAuthDomain = null;
   if (login) {
     if (token !== undefined && token !== null) throw new Error('proxy: login mode holds no token');
-    const a = new URL(login.authOrigin);
-    if (a.protocol !== 'http:' || a.hostname !== '127.0.0.1' || a.pathname !== '/' || `${a.protocol}//${a.host}` !== login.authOrigin) throw new Error('proxy: authOrigin must be http://127.0.0.1:<port>');
+    if (login.real) {
+      // REAL Google sign-in against a development Firebase project (no emulator)
+      if (login.authOrigin) throw new Error('proxy: real sign-in and an emulator auth origin are exclusive');
+      if (!AUTH_DOMAIN_RE.test(login.firebase?.authDomain || '')) throw new Error('proxy: real sign-in needs authDomain <project>.firebaseapp.com');
+      realAuthDomain = login.firebase.authDomain;
+    } else {
+      const a = new URL(login.authOrigin);
+      if (a.protocol !== 'http:' || a.hostname !== '127.0.0.1' || a.pathname !== '/' || `${a.protocol}//${a.host}` !== login.authOrigin) throw new Error('proxy: authOrigin must be http://127.0.0.1:<port>');
+    }
   } else if (typeof token !== 'string' || !token) throw new Error('proxy: token missing');
-  const SECURITY_HEADERS = { ...BASE_HEADERS, 'content-security-policy': csp(login ? login.authOrigin : null) };
-  const pageConfig = JSON.stringify(login ? { scenario, mode: 'login', firebase: login.firebase, authEmulator: login.authOrigin, emulatorAccounts: login.emulatorAccounts || [] } : { scenario });
+  const SECURITY_HEADERS = { ...BASE_HEADERS, 'content-security-policy': csp(login && !login.real ? login.authOrigin : null, realAuthDomain) };
+  const pageConfig = JSON.stringify(!login ? { scenario }
+    : login.real ? { scenario, mode: 'login', firebase: login.firebase, projectLabel: login.firebase.projectId }
+      : { scenario, mode: 'login', firebase: login.firebase, authEmulator: login.authOrigin, emulatorAccounts: login.emulatorAccounts || [] });
   const stats = { forwarded: 0, rejected: 0 };
   const files = new Map(Object.entries(staticFiles).map(([u, f]) => [u, path.join(webRoot, f)]));
   let server; let boundPort = port;

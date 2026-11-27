@@ -8,6 +8,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { importUpstream } from './upstream.mjs';
 import { createWebProxy } from './proxy.mjs';
+import { createApi } from '../server/api.mjs';
+import { createEmulatorBackend } from '../server/backend.mjs';
+import { createTraceProxy } from '../server/upstream/poc/stage2/src/trace-proxy.mjs';
 
 export const SCENARIOS = Object.freeze({
   'S-ROSTER-A17': 'ACTOR-TEACHER',
@@ -44,7 +47,7 @@ export async function openUpstream(stage2) {
   const masker = makeMasker(names);
   const h = createHarness({ cfg, nonce, fixtures, masker });
   return {
-    h, cfg, PORTS, names, fixtures,
+    h, cfg, PORTS, names, fixtures, masker,
     /** owned cleanup at the end of the run */
     close: async () => { assertStillOwned(await h.markerIds(), nonce); await fsc.clearAll(); await au.clearAll(); },
     /** true only if the Firestore and Auth emulator ports (upstream firebase.json) are confirmed closed */
@@ -83,7 +86,7 @@ export async function startLogin(up, { webPort, upstreamOverride = null }) {
     identities[id.email] = { uid, grant: id.grant };
   }
   const traceDir = mkdtempSync(path.join(os.tmpdir(), 'cmn-w1-'));
-  const stack = await up.h.startStack({ frontFile: path.join(traceDir, 'trace-front.jsonl'), backFile: path.join(traceDir, 'trace-back.jsonl') });
+  const stack = await startOwnStack(up, { frontFile: path.join(traceDir, 'trace-front.jsonl'), backFile: path.join(traceDir, 'trace-back.jsonl') });
   const proxy = createWebProxy({ port: webPort, upstream: upstreamOverride || `http://127.0.0.1:${up.PORTS.front}`, scenario: LOGIN_SCENARIO, webRoot: WEB_ROOT, staticFiles: STATIC_FILES,
     login: { authOrigin, firebase: { apiKey: 'demo-api-key', projectId: up.cfg.projectId, authDomain: `${up.cfg.projectId}.firebaseapp.com` },
       // the fictional accounts the emulator sign-in chooser offers (names + emails only; NO grant information)
@@ -95,13 +98,27 @@ export async function startLogin(up, { webPort, upstreamOverride = null }) {
   };
 }
 
+/** back trace proxy → THIS repository's controlled API (server/api.mjs, emulator backend) → front trace proxy.
+ *  Same ports and trace files as the upstream harness stack, so every E2E check is unchanged; the API under test
+ *  is the one that also runs in firebase mode (only the backend differs). */
+async function startOwnStack(up, { frontFile, backFile }) {
+  const { PORTS, cfg, masker } = up;
+  const back = createTraceProxy({ role: 'back', port: PORTS.back, masker, file: backFile, route: (u) => (u.startsWith('/identitytoolkit.googleapis.com/') ? cfg.auth.origin : cfg.firestore.origin) });
+  await back.listen();
+  const api = createApi({ port: PORTS.api, backend: createEmulatorBackend({ projectId: cfg.projectId, origin: `http://127.0.0.1:${PORTS.back}` }) });
+  await api.listen();
+  const front = createTraceProxy({ role: 'front', port: PORTS.front, masker, file: frontFile, route: () => `http://127.0.0.1:${PORTS.api}` });
+  await front.listen();
+  return { frontOrigin: `http://127.0.0.1:${PORTS.front}`, stop: async () => { await front.close(); await api.close(); await back.close(); } };
+}
+
 /** A fresh world for one scenario. `upstreamOverride` is for the E2E fault proxy only (never used by the launcher).
  *  → { url, users, stack, proxy, traceDir, stop } */
 export async function startScenario(up, { scenario, webPort, upstreamOverride = null }) {
   if (!Object.hasOwn(SCENARIOS, scenario)) throw new Error(`unknown scenario ${scenario}`);
   const users = await up.h.seedWorld();
   const traceDir = mkdtempSync(path.join(os.tmpdir(), 'cmn-w1-'));
-  const stack = await up.h.startStack({ frontFile: path.join(traceDir, 'trace-front.jsonl'), backFile: path.join(traceDir, 'trace-back.jsonl') });
+  const stack = await startOwnStack(up, { frontFile: path.join(traceDir, 'trace-front.jsonl'), backFile: path.join(traceDir, 'trace-back.jsonl') });
   const token = users[SCENARIOS[scenario]].token;
   const proxy = createWebProxy({ port: webPort, upstream: upstreamOverride || `http://127.0.0.1:${up.PORTS.front}`, token, scenario, webRoot: WEB_ROOT, staticFiles: STATIC_FILES });
   const port = await proxy.listen();

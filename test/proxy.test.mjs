@@ -171,3 +171,20 @@ test('the committed Firebase bundle equals a fresh build from the locked package
   const r = spawnSync(process.execPath, [path.join(WEB, '..', 'scripts', 'build-vendor.mjs'), '--check'], { encoding: 'utf8' });
   assert.equal(r.status, 0, r.stdout + r.stderr);
 });
+
+test('REAL Google sign-in mode (development project): CSP allows ONLY Google\'s sign-in hosts; no emulator config; no token held', async () => {
+  const base = { port: 0, upstream: `http://127.0.0.1:${upPort}`, scenario: 'LOGIN', webRoot: WEB, staticFiles: { '/': 'index.html' } };
+  assert.throws(() => createWebProxy({ ...base, login: { real: true, firebase: { authDomain: 'evil.example.com', projectId: 'p' } } }), /authDomain/);
+  assert.throws(() => createWebProxy({ ...base, login: { real: true, authOrigin: 'http://127.0.0.1:9099', firebase: { authDomain: 'cmn-dev.firebaseapp.com' } } }));
+  assert.throws(() => createWebProxy({ ...base, token: 't', login: { real: true, firebase: { authDomain: 'cmn-dev.firebaseapp.com' } } }));
+  const rp = createWebProxy({ ...base, login: { real: true, firebase: { apiKey: 'k', authDomain: 'cmn-dev.firebaseapp.com', projectId: 'cmn-dev', appId: 'a' } } });
+  const p = await rp.listen();
+  try {
+    const r = await new Promise((resolve) => http.get({ host: '127.0.0.1', port: p, path: '/scenario.json', headers: { host: `127.0.0.1:${p}` } }, (x) => { let b = ''; x.on('data', (d) => { b += d; }); x.on('end', () => resolve({ body: JSON.parse(b), csp: x.headers['content-security-policy'] })); }));
+    assert.deepEqual(r.body, { scenario: 'LOGIN', mode: 'login', firebase: { apiKey: 'k', authDomain: 'cmn-dev.firebaseapp.com', projectId: 'cmn-dev', appId: 'a' }, projectLabel: 'cmn-dev' });
+    assert.match(r.csp, /script-src 'self' https:\/\/apis\.google\.com;/);
+    assert.match(r.csp, /connect-src 'self' https:\/\/identitytoolkit\.googleapis\.com https:\/\/securetoken\.googleapis\.com https:\/\/www\.googleapis\.com;/);
+    assert.match(r.csp, /frame-src https:\/\/cmn-dev\.firebaseapp\.com https:\/\/apis\.google\.com;/);
+    assert.doesNotMatch(r.csp, /127\.0\.0\.1|unsafe|\*/);
+  } finally { await rp.close(); }
+});

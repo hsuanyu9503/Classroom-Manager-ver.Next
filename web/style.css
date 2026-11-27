@@ -29,6 +29,9 @@ h2:focus-visible { outline: var(--focus-ring); outline-offset: 4px; border-radiu
 .gate-notice { font-weight: 600; background: var(--color-surface-2); padding: 6px 10px; border-radius: 8px; }
 .gate-card[data-kind="noAccess"] { border-left: 8px solid var(--color-status-denied); }
 .class-bar { grid-column: 1 / -1; }
+.class-only { font-weight: 600; }
+.gate-uid { font-size: .9rem; color: var(--color-muted); overflow-wrap: anywhere; }
+.gate-uid code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--color-text); }
 .parked-notice { grid-column: 1 / -1; margin: 0; padding: 10px 14px; border: 2px dashed var(--color-status-unknown); background: var(--color-status-unknown-bg); color: var(--color-text); border-radius: var(--radius); font-weight: 600; }
 
 .account-list { display: grid; gap: 8px; margin: 8px 0 4px; }

@@ -1,0 +1,14 @@
+rules_version = '2';
+// Classroom Manager ver.Next — Cloud Firestore Security Rules (SPEC §12.4).
+// The web page NEVER reads or writes Firestore directly: every read and write goes through the controlled API, which
+// verifies the caller's Firebase ID token and authorizes EVERY request itself (server/api.mjs). The API uses its own
+// server-side credentials, which these rules do not apply to. Therefore: least privilege = no client access at all.
+// Signed-in users get nothing either: a sign-in proves identity only, never membership (no self-provisioning,
+// no role escalation, no reading other classes). Do not relax this to make anything "work".
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

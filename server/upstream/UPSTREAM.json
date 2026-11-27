@@ -1,0 +1,22 @@
+{
+  "source": "hsuanyu9503/class-management-next",
+  "commit": "1e20989ea6393c12dd18e11db617873c297a9f4a",
+  "note": "VERBATIM copies (git show <commit>:<path>). Never edit: the controlled API business logic (authorization, request shape, transaction / version / operationId / receipt rules) stays identical to the reviewed upstream. server/ forks only the credential / endpoint / token-verification layer.",
+  "files": {
+    "poc/stage1/src/common.mjs": "c914f7fd417a89745632860688eb02ff00b6a72535b7b609ac548b0fba0680bb",
+    "poc/stage2/src/authz.mjs": "ed616cf201bd65656394fc1c5d8c5d259cdf045a5d4325efb5d3eea268383ab3",
+    "poc/stage2/src/time-validate.mjs": "a043b367d7eec279b3236e6e52b690e98b4455bcfba464c05c04a71b034b9d5d",
+    "poc/stage2/src/stable.mjs": "3a3b58bbb09c537587da2129ffc27e5d81c91b77bda75ab1f32e975b79e83be3",
+    "poc/stage2/src/mask.mjs": "9c419dbaa78e6e800cc0a0ae81c9507aec10796ee57142c966bdf520efcc1bb7",
+    "poc/stage2/src/local-guard.mjs": "3e65f99571900c681f5bfc0b46608485483a7f534c2083dabfd58fb16caf6cde",
+    "poc/stage2/src/emu-client.mjs": "cb0305a24e4c584646cf1c69ce35ab6240fc43a92e19439767fa8d7605daa027",
+    "poc/stage2/src/trace-proxy.mjs": "eede1ffcc61c7e6d23ed1c77bf625596614c00dd122929f9ce7a3e8a49dc7e8e",
+    "poc/stage2/src/api/commit.mjs": "754204077c60717d6f40215ef106e14e7df4b765112820f481a8f38ec8feddf7",
+    "poc/stage2/src/api/request-shape.mjs": "14b43648e6063f133372fadf301830bc527ce23daaf0f8bd4e75602a5a2aece4",
+    "poc/stage2/src/api/response-shape.mjs": "d2a3a3d01ff836f9e39dc6d5b4538166d885ca0f2df92dd0d8ca1e8b78c60576",
+    "poc/stage2/src/api/store.mjs": "d2bc5bd572531578a84f5f6815534da51c142f575c2dc3c9684d05fff8b5abca",
+    "poc/stage2/src/api/txn.mjs": "b7335aa8a9bddc84c3e125ee0d5cf3c375fcd3836c5502c7081ebd448e7b0260",
+    "poc/stage2/src/api/token.mjs": "3e99466ecf75e52b8934aa1c7b3aa83eeddefb82077a296f77eb17687f560466",
+    "poc/stage2/src/api/server.mjs": "192afb846f7c1d39db67a9dbb8baa193fda71d55dc04acc59b754c6cf2a41721"
+  }
+}

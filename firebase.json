@@ -1,0 +1,4 @@
+{
+  "_comment": "Firestore rules for the Classroom Manager ver.Next Firebase project (deny-all for clients, SPEC §12.4). No hosting or functions are configured: nothing here deploys the site.",
+  "firestore": { "rules": "firestore.rules" }
+}

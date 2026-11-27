@@ -90,7 +90,7 @@ POC-002（沒有權限與不存在的回應相同）只是**參考案例**：本
 **token 的處理**：
 - 只有該情境 actor 的一個短期 Auth Emulator token，**只存在本機代理的記憶體中**。代理在轉送時，替請求加上 `Authorization` 標頭。
 - **頁面從頭到尾都拿不到 token**：
-  - 不寫入 localStorage、sessionStorage、IndexedDB 或 cookie；（**本批變更**：只限測試情境。登入模式由 Firebase SDK 管理登入狀態，見 §11.3）
+  - 不寫入 localStorage、sessionStorage、IndexedDB 或 cookie；（**本批變更**：本節「頁面不持有 token、代理附加測試 actor token」只適用於**測試情境**（`S-*`）。登入模式與真實模式由 Firebase SDK 管理登入者自己的登入狀態，代理不持有 token，見 §11.3、§12.3）
   - 不在網址、記錄檔或畫面中出現。
 - 頁面送來的 `Authorization` 標頭一律丟棄。
 - owner 權限（Emulator 的管理權）、其他 actor 的憑證、密碼，都**不會**進入代理或頁面；它們只留在啟動器的 harness 中。
@@ -340,7 +340,7 @@ POC-002（沒有權限與不存在的回應相同）只是**參考案例**：本
 - 上游 API 仍是固定版本 `1e20989`，本批沒有修改：它在 Emulator 模式就已驗證 token 並逐次授權。
 - Firestore Security Rules：上游 `poc/stage2/firestore.rules` 對 client SDK **一律拒絕**（`allow read, write: if false`），沒有使用公開讀寫的測試模式。網頁不直接存取 Firestore；受控 API 以 Emulator 的 owner 權限存取，並逐次自行授權。
 
-### 11.6 連到開發用 Firebase 專案的真實 Google 登入（尚未實作，需要負責人提供與決定）
+### 11.6 連到開發用 Firebase 專案的真實 Google 登入（**本批已在本 repository 實作，見 §12**；仍需要負責人提供的設定）
 
 - **網站端**：`signInWithPopup` 的程式已經寫好，但沒有啟用，也沒有執行過。需要：
   - 開發用專案的 Web app 設定：`apiKey`、`authDomain`、`projectId`、`appId`。這些是公開的識別資料，不是密碼。
@@ -364,4 +364,83 @@ POC-002（沒有權限與不存在的回應相同）只是**參考案例**：本
 | L-2 | 後端（受控 API）在哪裡執行 | (a) **負責人的電腦**（本機，連開發用專案），以 `gcloud auth application-default login` 取得憑證，不存金鑰。(b) Cloud Run 等託管服務：涉及付費與公開網址，需要另外同意 |
 | L-3 | 真實登入的 CSP 例外（§11.6） | (a) **只在開發用專案的真實登入模式放行**所列網域。(b) 改用 `signInWithRedirect`：同樣需要例外 |
 | L-4 | 開發用 Firebase 專案 | 需要負責人建立或指定，並提供 §11.6 的公開設定 |
+
+## 12. Firebase 實際模式（開發用專案；2026-11-28 本批新增）
+
+> 承接 §11。§11.6 原本寫「尚未實作」的後端變更，本批在**本 repository** 實作；上游 repository **沒有**修改。
+
+### 12.1 架構
+
+- 網頁 → 受控 API（`server/api.mjs`）→ Cloud Firestore。
+- 受控 API 的業務邏輯，是上游 `class-management-next` `1e20989` 的**逐字複本**（`server/upstream/`，以 SHA-256 核對）：
+  - 授權（`authz.mjs`）；
+  - 請求格式；
+  - 交易、版本、operationId、收據（`api/commit.mjs`）。
+- 只有「連到哪裡、用什麼憑證、如何驗證 ID token」這一層依模式不同：`server/config.mjs`、`backend.mjs`、`store.mjs`、`txn.mjs`、`token-firebase.mjs`、`credentials.mjs`。
+- 網頁**不**直接存取 Firestore，也不使用 Firestore SDK。
+
+### 12.2 兩種模式，明確區分（`CMN_API_MODE`）
+
+| 模式 | 用途 | 防止連錯專案 |
+|---|---|---|
+| `emulator` | 開發與自動測試：本機 Emulator、`demo-` 專案 | 上游的本機防護：只接受 `demo-` 專案與 loopback |
+| `firebase` | 開發用的**真實** Firebase 專案（虛構資料） | 專案 ID 要輸入兩次（`CMN_FIREBASE_PROJECT_ID`、`CMN_CONFIRM_FIREBASE_PROJECT`）；不得是 `demo-`；設有任何 `*_EMULATOR_HOST` 就拒絕；只能連該專案的 Firestore 文件與 `accounts:lookup` |
+
+### 12.3 真實模式的身分驗證
+
+- **網頁**：Firebase SDK 的 `signInWithPopup`（Google）。
+  - 登入狀態使用 `browserSessionPersistence`：只在這個分頁，關閉分頁就結束，是共用裝置的保守設定。
+  - CSP 只多允許 Google 登入必要的主機：`apis.google.com`、`identitytoolkit`／`securetoken`／`www.googleapis.com`、專案的 `authDomain`。這是 §7 的例外，只用在真實模式（§11.7 L-3）。
+- **API**：每一次請求都依下列順序檢查：
+  1. RS256 簽章：使用 Google 公開的 securetoken 憑證，依 `kid` 選擇，憑證依快取期限快取；
+  2. `iss`／`aud` 等於該專案，`sub` 等於 `user_id`，`iat`／`exp`／`auth_time`；
+  3. 以 API 自己的憑證查 `accounts:lookup`：帳號存在、未停用；若登入時間（`auth_time`）早於 `validSince`，就視為已撤銷。
+  - Emulator 的未簽章 token 在真實模式**一律拒絕**。
+- **API 自己的憑證**：
+  - `adc`：負責人電腦上 `gcloud auth application-default login` 的使用者憑證；**拒絕服務帳戶金鑰檔**；
+  - `metadata`：之後放在 Cloud Run 等環境時使用。
+  - 不在 repository、網頁、記錄或審查包中保存任何私鑰或 token。
+
+### 12.4 授權與 Firestore Rules
+
+- 授權沿用上游規格（S2-B1 授權模型），**每一次**讀取與修改都由 API 檢查：
+  - binding（`authBindings/{uid}`，必須是 active，而且 token 的 `iat` 不早於 `activatedAt`）；
+  - principal（active）；
+  - membership（工作空間、班級、有效日期）；
+  - capability（例如 `leave.revise`）。
+- 不憑 email 網域、前端傳入的角色或隱藏按鈕放行；請求中多出的欄位（例如 `principalId`、`role`）一律拒絕。
+- `firestore.rules`：對用戶端**一律拒絕**。登入者也無法自行寫入 binding 或 membership，也無法讀取任何資料。API 使用伺服器端憑證，不受 Rules 限制，所以授權完全由 API 負責。
+
+### 12.5 開通帳號（受信任的管理腳本）
+
+- `server/admin.mjs`，只由負責人在自己的電腦上執行：
+  - `bind --uid <UID> --principal <既有的 principal>`：principal 必須存在而且 active；
+  - `unbind --uid <UID>`：把 binding 改成 disabled，保留紀錄；
+  - `list-bindings`；
+  - `seed-fictional`：把固定的**虛構**世界寫入**空的**專案；非空就拒絕。
+  - 每次變更都寫入稽核紀錄。
+- 沒有網頁上的自助加入，第一位登入者也不會自動成為管理員。
+- 「尚未取得班級存取權」畫面會顯示該帳號的 UID（識別碼，不是密碼），讓負責人可以用來 `bind`。
+
+### 12.6 在負責人的電腦上以真實專案執行
+
+- `node server/main.mjs`：網頁與 API 在同一個本機 origin（`http://localhost:18400`），只在 loopback。這**不是**部署。
+- 步驟見 `docs/SETUP-FIREBASE.md`。
+- **要從不同裝置使用，需要部署**：網頁放 Firebase Hosting，API 放 Cloud Run。這涉及公開網址與付費方案，**本批不做**，待負責人決定（§12.8）。
+
+### 12.7 測試的區分
+
+| 類別 | 內容 | 狀態 |
+|---|---|---|
+| 單元測試 | 模式防護、憑證、真實模式的 token 驗證（以測試金鑰簽章）、URL 白名單、逐字複本的雜湊 | 自動 |
+| 真實模式程式路徑（Emulator） | `firebase` 後端，以測試金鑰簽章的 RS256 token 連 Emulator：授權、交易規則、帳號狀態 | 自動，**不是**真實 Google |
+| 模擬登入 E2E | Auth Emulator 的 Google provider，加上真正的頁面 | 自動，**不是**真實 Google |
+| 真實 Google 登入 | 開發用專案 | **未執行**：需要負責人的專案與設定 |
+
+### 12.8 缺口與待決
+
+- **G-A**：上游沒有「我的班級」API。頁面目前以 W1 固定的虛構目標逐一詢問 API（API 決定能不能看）。真實資料前，需要新增一個由 API 依 membership 列出班級的讀取操作，這是授權相關的新功能，要另外送審。
+- **G-B**：沒有管理介面；開通帳號只能用 `server/admin.mjs`。
+- **G-C**：多裝置使用需要部署：Hosting、Cloud Run、Blaze 付費方案。這些需要負責人同意。
+- §11.7 的 L-1～L-4 仍然有效；L-2 的建議改為：先在負責人電腦上執行（本批已可用），之後再決定雲端部署。
 

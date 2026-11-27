@@ -10,6 +10,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { openUpstream, startLogin } from '../dev/world.mjs';
+import { createEmulatorBackend } from '../server/backend.mjs';
+import { createAdmin } from '../server/admin.mjs';
 import { WEB_PORT } from '../dev/upstream.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -133,7 +135,8 @@ try {
       const docs = await waitAudits((a) => (who === NOACC ? a.authUid === uidOf(s, NOACC) : !known.has(a.authUid)) && a.reasonCode === 'BINDING_NOT_FOUND');
       const mine = who === NOACC ? audits(docs).filter((a) => a.authUid === uidOf(s, NOACC)) : audits(docs).filter((a) => !Object.values(s.identities).some((v) => v.uid === a.authUid) && !Object.values(s.users).some((u) => u.uid === a.authUid));
       const leak4 = await domLeak(page);
-      log(await gateKind(page) === 'noAccess' && t.includes('尚未取得班級存取權') && hasData(t).length === 0 && leak4.length === 0 && mine.length >= 2 && mine.every((a) => a.decision === 'deny' && a.reasonCode === 'BINDING_NOT_FOUND'),
+      const shownUid = await page.locator('#gateUid').innerText().catch(() => '');
+      log(await gateKind(page) === 'noAccess' && t.includes('尚未取得班級存取權') && hasData(t).length === 0 && leak4.length === 0 && mine.length >= 2 && shownUid.length > 0 && mine.every((a) => a.authUid === shownUid) && mine.every((a) => a.decision === 'deny' && a.reasonCode === 'BINDING_NOT_FOUND'),
         `L4 signed in without a binding (${who === 'new' ? 'brand-new emulator Google account' : NOACC}): 「尚未取得班級存取權」, no class data; every request was made with THIS uid and denied BINDING_NOT_FOUND (no auto-grant)`, `gate=${await gateKind(page)} text=${t.includes('尚未取得班級存取權')} data=${hasData(t)} deny=${mine.every((a) => a.decision === 'deny')} audits=${mine.length} ${[...new Set(mine.map((a) => a.reasonCode))]} allAudits=${JSON.stringify(audits(docs).slice(-3).map((a) => [a.authUid, a.reasonCode]))} keys=${Object.keys(docs).filter((k) => /audit/i.test(k)).slice(-2)}`);
       if (who === NOACC) await page.screenshot({ path: path.join(OUT, 'screens', 'L4-no-access-1440.png'), fullPage: true });
       await ctx.close();
@@ -155,7 +158,8 @@ try {
     }, tok);
     const docs = await state();
     const allowed = audits(docs).filter((a) => a.decision === 'allow');
-    log(t.includes('LV-007') && t.includes('上午') && !t.includes('2026-11-17') && await page.locator('#classBar').isHidden() && direct.a17 === 403 && direct.a17claimSC01 === 403 && direct.sc01 === 200
+    const classShown = await page.locator('#classOnly').innerText();
+    log(t.includes('LV-007') && t.includes('上午') && !t.includes('2026-11-17') && classShown.includes('CLASS-606-SC01') && await page.locator('#classSelect').isHidden() && direct.a17 === 403 && direct.a17claimSC01 === 403 && direct.sc01 === 200
       && allowed.length > 0 && allowed.every((a) => a.authUid === uidOf(s, SC01) && a.principalId === 'ACTOR-SC01-TEACHER') && (await page.locator('#authUser').innerText()).includes(SC01),
       'L5 SC01 teacher sees ONLY SC01 (LV-007); A17 is refused even when asked directly or with a forged claimed scope; every allowed request was made with the user\'s own Google uid', JSON.stringify(direct));
     await page.screenshot({ path: path.join(OUT, 'screens', 'L5-signed-in-sc01-1440.png'), fullPage: true });
@@ -261,6 +265,59 @@ try {
     const t = await mainText(page);
     const leak13 = await domLeak(page);
     log(t.includes('尚未取得班級存取權') && hasData(t).length === 0 && leak13.length === 0 && await page.locator('#authBar').isVisible(), 'L13 binding revoked while signed in: the next read is refused → re-check → 「尚未取得班級存取權」, no data left, still signed in');
+    await ctx.close();
+  }
+
+  /* ---------- L14 the client cannot give itself access: direct Firestore writes / reads with the user's own token are
+     denied by THIS repository's firestore.rules (loaded into the emulator), and the API has no route to do it */
+  {
+    const s = await world();
+    const rules = readFileSync(path.join(HERE, '..', 'firestore.rules'), 'utf8');
+    const lr = await fetch(`${up.cfg.firestore.origin}/emulator/v1/projects/${up.cfg.projectId}:securityRules`, { method: 'PUT', headers: { 'content-type': 'application/json', authorization: 'Bearer owner' }, body: JSON.stringify({ rules: { files: [{ name: 'firestore.rules', content: rules }] } }) });
+    const { ctx, page } = await open(s);
+    await signInAs(page, NOACC);
+    const tok = await ownToken(page); const uid = uidOf(s, NOACC);
+    const fsBase = `${up.cfg.firestore.origin}/v1/projects/${up.cfg.projectId}/databases/(default)/documents`;
+    const asUser = (url, init = {}) => fetch(url, { ...init, headers: { 'content-type': 'application/json', authorization: `Bearer ${tok}` } }).then((r) => r.status);
+    const field = (v) => ({ stringValue: v });
+    const tries = {
+      selfBind: await asUser(`${fsBase}/authBindings/${uid}`, { method: 'PATCH', body: JSON.stringify({ fields: { authUid: field(uid), principalId: field('ACTOR-SC01-TEACHER'), status: field('active'), activatedAt: field('2026-01-01T00:00:00Z') } }) }),
+      selfMember: await asUser(`${fsBase}/workspaces/WS-SC01/memberships/M-SELF`, { method: 'PATCH', body: JSON.stringify({ fields: { principalId: field('ACTOR-OTHER') } }) }),
+      readMembers: await asUser(`${fsBase}/workspaces/WS-SC01/memberships`),
+      readLeave: await asUser(`${fsBase}:runQuery`, { method: 'POST', body: JSON.stringify({ structuredQuery: { from: [{ collectionId: 'leaveRecords', allDescendants: true }] } }) }),
+    };
+    // through the API: there is no route for bindings / memberships, and role fields in a request are refused
+    const viaApi = await page.evaluate(async (token) => {
+      const post = async (p, body) => (await fetch(p, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify(body) })).status;
+      return {
+        bindRoute: await post('/v1/bind', { uid: 'x' }),
+        roleField: await post('/v1/read', { op: 'attendanceSession.read', target: { sessionId: 'AS-SC01-20261116-DAILY' }, claimedScope: { workspaceId: 'WS-SC01', classId: 'CLASS-606-SC01' }, principalId: 'ACTOR-SC01-TEACHER', role: 'admin' }),
+      };
+    }, tok);
+    const binding = await up.h.getDoc(`authBindings/${uid}`);
+    log(lr.status === 200 && Object.values(tries).every((x) => x === 403) && viaApi.bindRoute === 404 && viaApi.roleField === 403 && binding === null && await gateKind(page) === 'noAccess',
+      'L14 a signed-in client cannot give itself access: direct Firestore writes/reads with its own token → 403 (this repository\'s firestore.rules), no API route for bindings (404), forged principalId / role fields → 403; no binding was created',
+      `rules=${lr.status} ${JSON.stringify(tries)} api=${JSON.stringify(viaApi)}`);
+    await ctx.close();
+  }
+
+  /* ---------- L15 the owner's trusted admin script grants access; the user then presses 重新檢查 */
+  {
+    const s = await world(); const { ctx, page } = await open(s);
+    await signInAs(page, 'new');
+    const before = await gateKind(page);
+    const newUid = await page.evaluate(() => { for (let i = 0; i < sessionStorage.length; i += 1) { const k = sessionStorage.key(i); if (k.startsWith('firebase:authUser:')) return JSON.parse(sessionStorage.getItem(k)).uid; } return null; });
+    const admin = createAdmin(createEmulatorBackend({ projectId: up.cfg.projectId, origin: up.cfg.firestore.origin }), { actor: 'e2e-test-owner' });
+    let refusedUnknown = false; try { await admin.bind(newUid, 'ACTOR-DOES-NOT-EXIST'); } catch { refusedUnknown = true; }
+    await admin.bind(newUid, 'ACTOR-SC01-TEACHER');
+    await page.click('#recheckButton'); await waitLeave(page);
+    const t = await mainText(page);
+    const adminAudit = audits(await state()).filter((a) => a.action === 'admin.bind' && a.authUid === newUid);
+    await admin.unbind(newUid);
+    await page.evaluate(() => document.getElementById('sessionSelect').dispatchEvent(new Event('change')));
+    await page.waitForFunction(() => document.getElementById('gate').dataset.kind === 'noAccess' && !document.getElementById('gate').hidden, null, { timeout: 30000 });
+    log(before === 'noAccess' && refusedUnknown && t.includes('LV-007') && adminAudit.length === 1 && (await domLeak(page)).length === 0,
+      'L15 a new account has no access until the owner\'s admin script binds it (an unknown principal is refused); 重新檢查 then shows SC01; unbinding takes effect on the next read; each admin change is audited');
     await ctx.close();
   }
 
