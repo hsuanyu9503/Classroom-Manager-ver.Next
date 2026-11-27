@@ -21,3 +21,5 @@ export async function startScenario() {
     },
   };
 }
+export const LOGIN_SCENARIO = 'LOGIN';
+export async function startLogin() { throw new Error('mock-world: LOGIN is not used by the stop tests'); }

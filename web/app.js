@@ -1,5 +1,9 @@
-/* W1 page logic. SPEC §2 (pages), §4 (submission outcomes), §5 (nothing persisted in the browser).
-   The page holds no token: the local proxy adds it (SPEC §3). The only memory is the current frozen operation.
+/* W1 page logic. SPEC §2 (pages), §4 (submission outcomes), §5 (storage), §11 (Google sign-in).
+   Two modes, chosen by the local proxy (/scenario.json):
+   - actor (test scenarios): the page holds no token; the proxy adds the scenario actor's token.
+   - login (Google sign-in): Firebase Authentication (SDK, session persistence) holds the SIGNED-IN USER's token;
+     every API call carries that user's own ID token; the API verifies it and authorizes every request.
+     Signing in only proves identity: what the user may read is decided by the backend's bindings.
    The outcome rules (frozen operation, resend, 403 handling, receipt query, conflict lock) are unchanged by the
    UI refresh; only presentation, wording and focus handling changed. */
 'use strict';
@@ -12,28 +16,55 @@
     // S-DENY: ACTOR-OTHER has no membership; the page shows the same generic denial for every target
     'S-DENY': { scope: { workspaceId: 'WS-SC01', classId: 'CLASS-606-SC01' }, sessions: [{ date: '2026-11-16', sessionId: 'AS-SC01-20261116-DAILY' }], leave: { leaveRecordId: 'LV-007' } },
   };
+  /** login mode: the W1 classes of the fictional world. The page only ASKS; the API decides which ones this user may
+   *  read (a class the user is not bound to answers 403 and is never shown). Identifiers only. */
+  const LOGIN_CLASSES = [TARGETS['S-LEAVE-SC01'], TARGETS['S-ROSTER-A17']];
   const DAYPART = { AM: '上午', PM: '下午', FULL_DAY: '全天' };
   const $ = (id) => document.getElementById(id);
   const el = (tag, props = {}, ...kids) => { const n = document.createElement(tag); Object.assign(n, props); for (const k of kids) n.append(k); return n; };
 
+  let mode = 'actor';        // actor | login
+  let fb = null;             // the bundled Firebase Auth SDK (login mode only)
+  let auth = null;
+  let user = null;           // the signed-in Firebase user (login mode)
+  let epoch = 0;             // +1 on every account change: results that arrive for an older epoch are dropped
+  /** an unconfirmed operation of ANOTHER account, kept in memory only; never sent or queried with the current
+   *  account; restored when the same account signs in again in this tab */
+  let parked = null;         // { op, state, note }
+  let loginNotice = '';
+  let loggingOut = false;    // true only while the user's own 登出 runs
+  let loginConf = null;
   let cfg = null;
   let leave = null;          // last leave record read from the API
   let leaveState = 'none';   // none | loading | ok | denied | unavailable | stale  (for the hint only)
   /** The frozen operation (SPEC §4-1): operationId + the COMPLETE request body, created once, never rebuilt. */
-  let op = null;             // { operationId, bodyText, expectedVersion }
+  let op = null;             // { operationId, bodyText, expectedVersion, uid }  (uid: the account that created it)
   let state = 'idle';        // idle | sending | done | conflict | unknown | unknownDenied | denied | invalid | error
   let note = '';
   let lastReceipt = null;
   let renderedState = 'idle';
 
+  /** status 'NO_SESSION': no usable sign-in (handled, show nothing); 'STALE': the account changed meanwhile (drop) */
   async function api(path, bodyText) {
+    const my = epoch;
+    const headers = { 'content-type': 'application/json' };
+    if (mode === 'login') {
+      if (!user) return { status: 'NO_SESSION', body: null };
+      let t = null;
+      try { t = await user.getIdToken(); } catch (e) { if (my === epoch) sessionInvalid(e); return { status: 'NO_SESSION', body: null }; }
+      if (my !== epoch) return { status: 'STALE', body: null };
+      headers.authorization = `Bearer ${t}`;
+    }
+    let out;
     try {
-      const r = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: bodyText, cache: 'no-store', credentials: 'same-origin' });
+      const r = await fetch(path, { method: 'POST', headers, body: bodyText, cache: 'no-store', credentials: 'same-origin' });
       let body = null; try { body = await r.json(); } catch { /* non-JSON */ }
-      return { status: r.status, body };
-    } catch { return { status: 0, body: null }; }   // network error / connection lost
+      out = { status: r.status, body };
+    } catch { out = { status: 0, body: null }; }   // network error / connection lost
+    return my === epoch ? out : { status: 'STALE', body: null };
   }
-  const read = (opName, target) => api('/v1/read', JSON.stringify({ op: opName, target, claimedScope: cfg.scope }));
+  const dropped = (r) => r.status === 'STALE' || r.status === 'NO_SESSION';
+  const read = (opName, target, scope = cfg.scope) => api('/v1/read', JSON.stringify({ op: opName, target, claimedScope: scope }));
   const isOk = (r) => r.status === 200 && r.body && r.body.code === 'OK';
   const denial = () => el('p', { className: 'denied' }, el('span', { className: 'tag tag-denied', textContent: '無法存取' }), '無法存取。');
   const unavailable = (retry) => el('div', { className: 'unavailable' }, el('p', { textContent: '目前無法讀取，請稍後再試。' }), el('button', { type: 'button', textContent: '重試', onclick: retry }));
@@ -44,7 +75,8 @@
     const sessionId = $('sessionSelect').value;
     const body = $('p1Body'); body.replaceChildren(el('p', { className: 'loading', textContent: '讀取中…' }));
     const [ses, sum] = await Promise.all([read('attendanceSession.read', { sessionId }), read('attendanceSummary.read', { sessionId })]);
-    if (ses.status === 403 || sum.status === 403) { $('dateField').hidden = true; return body.replaceChildren(denial()); }
+    if (dropped(ses) || dropped(sum)) return undefined;
+    if (ses.status === 403 || sum.status === 403) { $('dateField').hidden = true; body.replaceChildren(denial()); return recheckAccess(); }
     if (!isOk(ses) || !isOk(sum)) return body.replaceChildren(unavailable(loadRoster));
     $('dateField').hidden = false;
     const c = sum.body.data.counts;
@@ -73,7 +105,8 @@
     const body = $('p2Body'); body.replaceChildren(el('p', { className: 'loading', textContent: '讀取中…' }));
     leave = null; leaveState = 'loading'; updateReviseButton();
     const r = await read('leaveRecord.read', { leaveRecordId: cfg.leave.leaveRecordId });
-    if (r.status === 403) { leaveState = 'denied'; updateReviseButton(); body.replaceChildren(denial()); return refreshDoneText(); }
+    if (dropped(r)) return undefined;
+    if (r.status === 403) { leaveState = 'denied'; updateReviseButton(); body.replaceChildren(denial()); refreshDoneText(); return recheckAccess(); }
     if (!isOk(r)) { leaveState = 'unavailable'; updateReviseButton(); body.replaceChildren(unavailable(loadLeave)); return refreshDoneText(); }
     leave = r.body.data; leaveState = 'ok';
     const segs = leave.coverageSegments || [];
@@ -128,7 +161,7 @@
     const operationId = crypto.randomUUID();
     const command = { schemaVersion: '1.0', workspaceId: cfg.scope.workspaceId, operationId, commandType: 'LeaveRecord.Revise', targetType: 'LeaveRecord', targetId: leave.leaveRecordId,
       expectedVersion: leave.version, intent: { coverageChange: 'AM_TO_FULL_DAY', reasonCode: 'SOURCE_CORRECTION' }, clientCreatedAt: new Date().toISOString() };
-    return Object.freeze({ operationId, expectedVersion: leave.version, bodyText: JSON.stringify({ command, claimedScope: cfg.scope }) });
+    return Object.freeze({ operationId, expectedVersion: leave.version, bodyText: JSON.stringify({ command, claimedScope: cfg.scope }), uid: mode === 'login' ? user.uid : null, scope: cfg.scope });
   }
   async function confirmAndSend() {
     if (state === 'sending' || op !== null) return;           // double activation reuses nothing new
@@ -138,10 +171,12 @@
     await send('first');
   }
   /** One submission of the FROZEN operation. phase: 'first' (just confirmed) | 'resend' (after an unknown result). */
+  const ownOp = () => !!op && (mode !== 'login' || (!!user && op.uid === user.uid));
   async function send(phase) {
-    if (!op || state === 'sending') return;
+    if (!op || state === 'sending' || !ownOp()) return;   // never sent with another account
     state = 'sending'; note = ''; render();
     const r = await api('/v1/commit', op.bodyText);
+    if (dropped(r)) return;                              // account changed while sending: parked as unknown (onUser)
     const code = r.body && r.body.code;
     if (r.status === 200 && code === 'OK' && r.body.receipt && r.body.receipt.operationId === op.operationId) return finishDone(r.body.receipt);
     if (r.status === 409 && code === 'VERSION_CONFLICT') {
@@ -161,9 +196,10 @@
   }
   /** P4 "查詢結果": receipt of the ORIGINAL operationId. Failure / FORBIDDEN keeps the result unknown. */
   async function queryResult() {
-    if (!op || state === 'sending') return;
+    if (!op || state === 'sending' || !ownOp()) return;
     const prev = state; state = 'sending'; render();
-    const r = await api('/v1/receipt', JSON.stringify({ operationId: op.operationId, workspaceId: cfg.scope.workspaceId }));
+    const r = await api('/v1/receipt', JSON.stringify({ operationId: op.operationId, workspaceId: op.scope.workspaceId }));
+    if (dropped(r)) return;
     if (r.status === 200 && r.body && r.body.code === 'OK' && r.body.receipt && r.body.receipt.operationId === op.operationId) return finishDone(r.body.receipt);
     state = prev; note = '查詢沒有取得結果（無法存取或暫時無法連線），送出結果仍未確認。'; render();
   }
@@ -187,6 +223,7 @@
   function render() {
     const card = $('p4'); const region = $('statusRegion'); const actions = $('statusActions');
     updateReviseButton();
+    if (mode === 'login') { $('logoutButton').disabled = state === 'sending'; $('classSelect').disabled = op !== null; }
     const btn = (text, fn, primary = false) => el('button', { type: 'button', textContent: text, className: primary ? 'primary' : '', onclick: fn });
     const acts = [];
     switch (state) {
@@ -219,9 +256,205 @@
   }
 
   /* ---------------- leaving the page with an unconfirmed operation (best-effort reminder only, SPEC §4-5) */
+  const unconfirmed = () => !!op && ['unknown', 'unknownDenied', 'sending', 'error'].includes(state);
   window.addEventListener('beforeunload', (e) => {
-    if (op && (state === 'unknown' || state === 'unknownDenied' || state === 'sending' || state === 'error')) { e.preventDefault(); e.returnValue = ''; }
+    if (unconfirmed() || parked) { e.preventDefault(); e.returnValue = ''; }
   });
+
+  /* ---------------- login mode (SPEC §11): gate screens, account bar, account changes */
+  const show = (id, on) => { $(id).hidden = !on; };
+  function showGate(kind, extra = '') {
+    show('gate', true); show('p1', false); show('side', false); show('classBar', false);
+    const btn = (text, fn, primary = false, id = '') => el('button', { type: 'button', textContent: text, className: primary ? 'primary' : '', onclick: fn, ...(id ? { id } : {}) });
+    const G = {
+      checking: ['正在確認登入狀態…', extra || '請稍候。', []],
+      login: ['請先登入', '使用 Google 帳號登入後，才會顯示你有權限的班級資料。登入只確認你是誰，不會自動取得任何班級權限。', [btn('使用 Google 登入', signIn, true, 'loginButton')]],
+      noAccess: ['尚未取得班級存取權', `你已用 ${user?.email || '這個帳號'} 登入，但這個帳號${extra === 'revoked' ? '目前沒有（或已不再有）' : '還沒有'}被授權存取任何班級，所以不會顯示班級資料。請聯絡管理者授權；授權後按「重新檢查」。`, [btn('重新檢查', () => enterClass(true), true, 'recheckButton'), btn('登出', logout)]],
+    }[kind];
+    $('gate').dataset.kind = kind;
+    $('gateTitle').textContent = G[0];
+    const kids = [el('p', { textContent: G[1] })];
+    if (kind === 'login' && loginNotice) kids.unshift(el('p', { className: 'gate-notice', id: 'loginNotice', textContent: loginNotice }));
+    $('gateBody').replaceChildren(...kids);
+    $('gateActions').replaceChildren(...G[2]);
+    renderParked();
+  }
+  function showData() { show('gate', false); show('p1', true); show('side', true); renderParked(); }
+  function renderParked() {
+    const on = mode === 'login' && !!parked && (!user || parked.op.uid !== user.uid);
+    show('parkedNotice', on);
+    if (on) $('parkedNotice').textContent = '這個分頁中，先前的帳號有一個送出結果尚未確認的操作。它不會用目前的帳號查詢或重送；請改用原本的帳號登入後再確認結果。';
+  }
+  function renderAccount() {
+    show('authBar', mode === 'login' && !!user);
+    if (user) { $('authUser').textContent = user.displayName ? `${user.displayName}（${user.email || ''}）` : (user.email || '已登入'); }
+    $('logoutButton').disabled = state === 'sending';
+  }
+  /** wipe everything the previous account saw (data, selections, results); keeps nothing in the DOM */
+  function clearData() {
+    cfg = null; leave = null; leaveState = 'none'; lastReceipt = null; note = ''; state = 'idle'; op = null; renderedState = 'idle';
+    $('p1Body').replaceChildren(); $('p2Body').replaceChildren(); $('statusRegion').replaceChildren(); $('statusActions').replaceChildren();
+    $('statusRegion').dataset.state = 'idle'; $('p4').dataset.state = 'idle';
+    $('devScope').textContent = '班級：尚未選擇。';
+    $('sessionSelect').replaceChildren(); $('classSelect').replaceChildren();
+    show('p4', false); show('p2', false); show('reviseBox', false); $('dateField').hidden = false;
+    document.body.classList.remove('has-leave');
+  }
+  async function onUser(u) {
+    epoch += 1;
+    const prevUid = user ? user.uid : null; const nextUid = u ? u.uid : null;
+    // an operation of the previous account is parked, never handed to the next one
+    if (op && op.uid !== nextUid) parked = { op, state: state === 'sending' ? 'unknown' : state, note };
+    clearData();
+    user = u; renderAccount();
+    if (parked && nextUid && parked.op.uid === nextUid) { op = parked.op; state = parked.state; note = parked.note; parked = null; }
+    if (!u) {
+      // signed out without the user asking (e.g. the SDK found the account disabled / the session revoked)
+      if (prevUid && !loggingOut && !loginNotice) loginNotice = '登入已失效，請重新登入。';
+      loggingOut = false;
+      showGate('login'); return;
+    }
+    if (prevUid !== nextUid) loginNotice = '';
+    await enterClass(false);
+  }
+  /** which W1 classes may this account read? (the API decides; nothing is shown before it answers) */
+  async function probeClasses() {
+    const ok = [];
+    for (const c of LOGIN_CLASSES) {
+      const r = await read('attendanceSession.read', { sessionId: c.sessions[0].sessionId }, c.scope);
+      if (dropped(r)) return null;
+      if (isOk(r)) ok.push(c);
+    }
+    return ok;
+  }
+  async function enterClass(forceRefresh) {
+    const my = epoch;
+    showGate('checking', '正在確認你的班級存取權…');
+    if (forceRefresh) { try { await checkSession(); } catch (e) { if (my === epoch) sessionInvalid(e); return; } }
+    const acc = await probeClasses();
+    if (acc === null || my !== epoch) return;
+    if (!acc.length) { showGate('noAccess'); return; }
+    const sel = $('classSelect'); sel.replaceChildren();
+    for (const c of acc) sel.append(el('option', { value: c.scope.classId, textContent: c.scope.classId }));
+    show('classBar', acc.length > 1);
+    const pick = (op && acc.find((c) => c.scope.classId === op.scope.classId)) || acc[0];
+    sel.value = pick.scope.classId;
+    await selectClass(pick);
+  }
+  async function selectClass(c) {
+    cfg = c; leave = null; leaveState = 'none';
+    $('p1Body').replaceChildren(); $('p2Body').replaceChildren();
+    document.body.classList.toggle('has-leave', !!c.leave);
+    const sel = $('sessionSelect'); sel.replaceChildren();
+    for (const s of c.sessions) sel.append(el('option', { value: s.sessionId, textContent: s.date }));
+    $('classSelect').disabled = op !== null;            // never switch class under an unconfirmed operation
+    $('devScope').textContent = `班級 ${c.scope.classId}（工作空間 ${c.scope.workspaceId}）${c.leave ? `、請假紀錄 ${c.leave.leaveRecordId}` : '（只有名冊，唯讀）'}。`;
+    show('p2', !!c.leave);
+    showData();
+    render();
+    await loadRoster();
+    if (c.leave && cfg === c) await loadLeave();
+  }
+  /** is the sign-in still usable? reload() asks the Auth service about the account (disabled / deleted fails here,
+   *  even where a token refresh would still be issued); then a fresh ID token (newer iat, e.g. after a new binding) */
+  async function checkSession() { await user.reload(); await user.getIdToken(true); }
+  /** a 403 while reading in login mode: is the sign-in still valid? is the access still there? (revocation) */
+  let rechecking = false;
+  async function recheckAccess() {
+    if (mode !== 'login' || rechecking || !user) return;
+    rechecking = true; const my = epoch;
+    try {
+      try { await checkSession(); } catch (e) { if (my === epoch) sessionInvalid(e); return; }
+      if (my !== epoch) return;
+      const acc = await probeClasses();
+      if (acc === null || my !== epoch) return;
+      if (cfg && acc.some((c) => c.scope.classId === cfg.scope.classId)) return;   // still allowed: keep the denial shown
+      if (op) return;                                    // an unconfirmed operation of this account stays visible
+      clearData(); renderAccount();
+      if (!acc.length) showGate('noAccess', 'revoked'); else await enterClass(false);
+    } finally { rechecking = false; }
+  }
+  /** the sign-in cannot be used any more (disabled account, expired / revoked session): sign out, say why */
+  function sessionInvalid(e) {
+    loginNotice = `登入已失效，請重新登入${e && e.code ? `（${e.code}）` : ''}。`;
+    epoch += 1;
+    if (op) parked = { op, state: state === 'sending' ? 'unknown' : state, note };
+    clearData();
+    fb.signOut(auth).catch(() => {});
+    showGate('login');
+  }
+  const LOGIN_ERRORS = {
+    'auth/popup-closed-by-user': '已取消登入，沒有任何變更。',
+    'auth/cancelled-popup-request': '已取消登入，沒有任何變更。',
+    'auth/user-cancelled': '已取消登入，沒有任何變更。',
+    'auth/popup-blocked': '瀏覽器擋下了登入視窗。請允許這個網站開啟彈出視窗後，再試一次。',
+    'auth/network-request-failed': '無法連線到登入服務，請稍後再試。',
+    'auth/user-disabled': '這個帳號已被停用，無法登入。',
+  };
+  const busy = () => { const b = $('loginButton'); if (b) { b.disabled = true; b.textContent = '登入中…'; } const n = $('loginNotice'); if (n) n.remove(); };
+  const failed = (e) => { loginNotice = LOGIN_ERRORS[e && e.code] || `登入沒有成功，請再試一次${e && e.code ? `（${e.code}）` : ''}。`; if (!user) showGate('login'); };
+  async function signIn() {
+    loginNotice = '';
+    if (loginConf.authEmulator) return openAccountChooser();
+    // REAL Google sign-in (a development Firebase project). NOT used with the emulator: the SDK's popup loads
+    // https://apis.google.com, which needs a CSP exception that is not approved yet (SPEC §11.6).
+    busy();
+    try {
+      const provider = new fb.GoogleAuthProvider(); provider.setCustomParameters({ prompt: 'select_account' });
+      await fb.signInWithPopup(auth, provider);          // success continues in onAuthStateChanged → onUser
+    } catch (e) { failed(e); }
+  }
+  /** EMULATOR ONLY: choose a fictional account; the Auth Emulator accepts its documented fake Google credential and
+   *  issues an emulator ID token for that Google-provider account. This is a simulated sign-in, not Google. */
+  function openAccountChooser() {
+    const d = $('accountDialog'); let chosen = null;
+    const pickBtn = (acc, isNew = false) => el('button', { type: 'button', className: isNew ? 'acc-new' : '', onclick: () => { chosen = acc; d.close(); } },
+      el('span', { textContent: acc.name }), el('span', { className: 'acc-email', textContent: acc.email }));
+    const fresh = { email: `new-${crypto.randomUUID().slice(0, 8)}@example.test`, name: '新的虛構帳號（沒有任何授權）' };
+    $('accountList').replaceChildren(...loginConf.emulatorAccounts.map((a) => pickBtn(a)), pickBtn(fresh, true));
+    d.onclose = () => {
+      d.onclose = null;
+      if (!chosen) { loginNotice = '已取消登入，沒有任何變更。'; showGate('login'); return; }
+      emulatorSignIn(chosen);
+    };
+    d.showModal();
+    const first = $('accountList').querySelector('button'); if (first) first.focus();
+  }
+  async function emulatorSignIn(acc) {
+    busy();
+    try {
+      const cred = fb.GoogleAuthProvider.credential(JSON.stringify({ sub: `fictional-${acc.email}`, email: acc.email, email_verified: true, name: acc.name }));
+      await fb.signInWithCredential(auth, cred);         // success continues in onAuthStateChanged → onUser
+    } catch (e) { failed(e); }
+  }
+  async function logout() {
+    if (state === 'sending') return;
+    if (unconfirmed() && !window.confirm('還有一個送出結果尚未確認的操作。登出後，這個分頁會保留它，但只有用同一個帳號重新登入後才能查詢結果。確定要登出嗎？')) return;
+    loginNotice = '已登出。'; loggingOut = true;
+    await fb.signOut(auth);                              // → onAuthStateChanged(null) → onUser(null)
+  }
+  async function initLogin(conf) {
+    mode = 'login'; loginConf = conf;
+    $('accountCancel').addEventListener('click', () => $('accountDialog').close());
+    $('scenarioBanner').textContent = '登入模式：Google（本機 Auth Emulator）｜虛構資料｜暫定色票';
+    $('devLogin').hidden = false;
+    $('logoutButton').addEventListener('click', logout);
+    $('classSelect').addEventListener('change', () => { const c = LOGIN_CLASSES.find((x) => x.scope.classId === $('classSelect').value); if (c && op === null) selectClass(c); });
+    showGate('checking');
+    try {
+      fb = await import('/vendor/firebase-auth.js');
+      const app = fb.initializeApp(conf.firebase);
+      // the SDK keeps the sign-in for THIS TAB only (sessionStorage), so a reload keeps it and closing the tab ends it
+      // the popup resolver is only attached for REAL Google sign-in (it loads https://apis.google.com)
+      auth = fb.initializeAuth(app, { persistence: fb.browserSessionPersistence, ...(conf.authEmulator ? {} : { popupRedirectResolver: fb.browserPopupRedirectResolver }) });
+      if (conf.authEmulator) fb.connectAuthEmulator(auth, conf.authEmulator, { disableWarnings: true });
+    } catch {
+      showGate('checking', '無法載入登入元件，請重新整理頁面。'); return;
+    }
+    let first = true;
+    const t = setTimeout(() => { if (first) { loginNotice = '無法確認登入狀態，請重新整理頁面或重新登入。'; showGate('login'); } }, 15000);
+    fb.onAuthStateChanged(auth, (u) => { first = false; clearTimeout(t); onUser(u); });
+  }
 
   /* ---------------- dialog keyboard handling: Escape / 返回 close, focus returns, Tab cycles (DESIGN §5) */
   function wireDialog() {
@@ -244,8 +477,11 @@
 
   async function init() {
     $('p2Title').tabIndex = -1;
-    let scenario = null;
-    try { const r = await fetch('/scenario.json', { cache: 'no-store' }); scenario = (await r.json()).scenario; } catch { /* */ }
+    let scenario = null; let conf = null;
+    try { const r = await fetch('/scenario.json', { cache: 'no-store' }); conf = await r.json(); scenario = conf.scenario; } catch { /* */ }
+    wireDialog();
+    $('sessionSelect').addEventListener('change', loadRoster);
+    if (conf && conf.mode === 'login') return initLogin(conf);
     cfg = Object.hasOwn(TARGETS, scenario || '') ? TARGETS[scenario] : null;
     if (!cfg) { $('scenarioBanner').textContent = '測試情境：無法辨識｜虛構資料｜暫定色票'; $('dateField').hidden = true; $('p1Body').replaceChildren(denial()); return; }
     $('scenarioBanner').textContent = `測試情境：${scenario}｜虛構資料｜暫定色票`;
@@ -253,8 +489,6 @@
     document.body.classList.toggle('has-leave', !!cfg.leave);
     const sel = $('sessionSelect');
     for (const s of cfg.sessions) sel.append(el('option', { value: s.sessionId, textContent: s.date }));
-    sel.addEventListener('change', loadRoster);
-    wireDialog();
     await loadRoster();
     if (cfg.leave) { $('p2').hidden = false; await loadLeave(); }
   }

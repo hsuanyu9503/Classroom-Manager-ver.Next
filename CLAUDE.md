@@ -22,7 +22,9 @@
 - **禁止提交**：`.env`、存取憑證、token、正式資料匯出、個資。
 - **不部署**：本 repository 是 public；不啟用 GitHub Pages 或任何部署流程，除非負責人另外決定。
 - **後端**：只連本機的 Firebase Emulator 與 `class-management-next` 中**固定版本**的受控 API（SPEC §3）。不建立正式的 Firebase 專案，不接正式資料。
+  - **2026-11-28 負責人決定**：資料庫確定使用 Firebase（Cloud Firestore）；新增 Google 登入。真實 Google 登入另外使用**開發用** Firebase 專案與**虛構**班級資料（SPEC §11.6）；該專案由負責人建立與設定，Claude 不建立、不啟用付費服務、不公開部署。
 - **瀏覽器端**：頁面不持有 token 或任何憑證；不使用 localStorage、sessionStorage、IndexedDB、cookie 保存資料（SPEC §3、§5）。
+  - 例外（2026-11-28，SPEC §11.3）：登入模式由 Firebase SDK 把**登入者自己的**登入狀態保存在該分頁的 sessionStorage；頁面程式本身仍不寫入任何儲存。
 - **測試**：必須執行實際可以執行的測試，並把「已通過」「未執行」「只經人工檢視」分開寫。不能以「可以載入」代替操作驗收；要檢查手機、平板、桌面的版面與鍵盤操作。
 - **審查**：每個 PR 初評風險等級（L1 純文件／L2 一般功能／L3 授權、資料一致性、代理邊界）。L2、L3 要把實際差異交 ChatGPT 獨立審查；只有摘要或截圖，不能宣稱已完成 Code Review。
 - AI 的審查意見**不是** GitHub 的正式 Approve，也不能代替負責人核准合併。

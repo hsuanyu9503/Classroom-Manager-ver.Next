@@ -1,0 +1,7 @@
+{
+  "_comment": "TEMPLATE for the REAL Google sign-in against a DEVELOPMENT Firebase project (SPEC §11.6). NOT used yet. Copy to dev/firebase-web-config.json (git-ignored) and fill in the Web app settings from the Firebase Console (Project settings → Your apps → Web app). These values are public identifiers, NOT secrets: never put a password, a service-account private key or a Google client secret here or anywhere in this repository.",
+  "apiKey": "<Web API key of the development project>",
+  "authDomain": "<project-id>.firebaseapp.com",
+  "projectId": "<project-id>",
+  "appId": "<Web app id>"
+}
