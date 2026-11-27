@@ -1,15 +1,14 @@
 # W1 實際畫面（驗收用）
 
-> - **產生的版本**：`2661dd2a6812e708a60fd3c2f12594c76b9d73b3`（分支 `claude/w1-acceptance-prep`，工作目錄乾淨）。
->   - 頁面程式 `web/` 和 `main` `ba1909f` 完全相同（`web/` 自 `b7458ad` 之後就沒有改過）。
+> - **產生的版本**：`cb601bb3f3ff67a778dac25392d9dcabcb8d0265`（分支 `claude/w1-ui-refresh`，工作目錄乾淨）。這是**新版介面**（2026-11-27）。
+>   - 改版前的 36 張（`2661dd2`）保留在 git 歷史中。
 >   - 上游 API：`1e20989`。
 > - **產生的方式**：`npm run screens -- --upstream <path>`（`test/screens.mjs`）。
->   - 真正的頁面、真正的 Auth／Firestore Emulator、固定版本的受控 API；Playwright 1.63.0 的 Chromium，deviceScaleFactor 1；作者在 Linux 執行，2026-11-26。
+>   - 真正的頁面、真正的 Auth／Firestore Emulator、固定版本的受控 API；Playwright 1.63.0 的 Chromium，deviceScaleFactor 1；作者在 Linux 執行，2026-11-27。
 >   - 每個流程都從全新的虛構世界開始。
 > - **故障注入**（08、09）：使用與 `test/e2e.mjs` 相同的**測試專用**故障代理；網頁本身沒有任何測試按鈕。
 > - 36 張截圖都沒有水平溢出；頁首都有「虛構資料｜暫定色票」（`manifest.json`）。
-> - 色彩是**暫定色票**，不是正式決定（Q-2）。
-
+> - 色彩是**暫定色票**，不是正式決定（Q-2）；本次改版的樣式也**沒有**經負責人核准。
 ## S-ROSTER-A17：P1 名冊（座號、狀態代碼）與摘要
 
 **手機 390×844**

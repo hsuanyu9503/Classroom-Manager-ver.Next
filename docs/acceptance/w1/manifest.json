@@ -291,7 +291,8 @@
     }
   ],
   "problems": [],
-  "generatedAt": "2026-11-26",
-  "head": "2661dd2a6812e708a60fd3c2f12594c76b9d73b3",
-  "web": "identical to main ba1909f"
+  "generatedAt": "2026-11-27",
+  "head": "cb601bb3f3ff67a778dac25392d9dcabcb8d0265",
+  "web": "UI refresh (claude/w1-ui-refresh)",
+  "previousSet": "2661dd2 (before the UI refresh, see git history)"
 }
