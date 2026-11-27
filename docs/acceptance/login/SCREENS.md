@@ -1,9 +1,9 @@
 # Google 登入（模擬）的實際畫面
 
-> - 產生的版本：`f141bcc41576bac0ce2b8cfe9f6344195246df45`（分支 `claude/w1-google-login`，工作目錄乾淨），作者在 Linux 執行，2026-11-27。
+> - 產生的版本：`3e043168531b60e1d04bda9de63a4797c53862da`（分支 `claude/firebase-real-mode`，工作目錄乾淨），作者在 Linux 執行，2026-11-27。
 > - `npm run e2e -- --upstream <path> --script e2e-login`：真正的頁面、本機 Auth／Firestore Emulator、固定版本的 API `1e20989`。
 > - **模擬登入**：Auth Emulator 的 Google provider 與虛構帳號，**不是**真的 Google 登入。
-> - 結果：`e2e-login-results.json`（15/15）。色彩與樣式都是暫定。
+> - 結果：`e2e-login-results.json`（17/17）；真實模式程式路徑在 Emulator 的結果：`firebase-mode-results.json`（5/5，以測試金鑰簽章，**不是**真實 Google）。色彩與樣式都是暫定。
 
 **未登入：只有「請先登入」**
 
@@ -17,7 +17,7 @@
 
 ![模擬登入的帳號選擇窗（虛構帳號）](screens/L2-chooser-1440.png)
 
-**已登入、沒有授權：「尚未取得班級存取權」**
+**已登入、沒有授權：「尚未取得班級存取權」，顯示 UID 供管理者開通**
 
 ![已登入、沒有授權：「尚未取得班級存取權」](screens/L4-no-access-1440.png)
 

@@ -1,13 +1,70 @@
 # HANDOFF｜目前工作與交接狀態
 
-## 目前狀態（2026-11-28）
+## 目前狀態（2026-11-28，第二批：Firebase 實際模式）
 
-- 目前任務：**Google 登入**（負責人決定，2026-11-28）：
-  - 資料庫確定使用 Firebase（Cloud Firestore）；
-  - 新增 Google 登入、登出與登入狀態；
-  - 使用者只能看到後端授權給自己的 W1 資料。
-- 分支 `claude/w1-google-login`，基準 `main` `7958af3`（PR #5 合併）。L3：授權相關。
-- 上游 API 仍固定 `1e20989`，**沒有修改**：它在 Emulator 模式就已逐次驗證 token、以 `authBindings/{uid}` 授權。
+- 目前任務：**Firebase 實際模式**（負責人指示）：
+  - Cloud Firestore 加上 Firebase Authentication（Google）；
+  - 受控 API 驗證**真實**的 Firebase ID token；
+  - 第一個可完整操作的版本。
+- 分支 `claude/firebase-real-mode`，從 PR #6（`002e667`，模擬登入，**尚未合併**）接續。基準 `main` `7958af3`：PR #5 已合併，含 R1 的修正 `ff9ea2d`；PR #4 已合併。
+- 上游 `class-management-next` **沒有修改**：受控 API 的業務邏輯以 `1e20989` 的逐字複本放在 `server/upstream/`，由 `npm test` 核對 SHA-256，也與上游 git 歷史逐字比對。
+
+### 第二批改了什麼
+
+| 部分 | 內容 |
+|---|---|
+| API 位置 | `server/`：受控 API 移到本 repository。授權、請求格式、交易／版本／operationId／收據，都是上游逐字複本；只 fork 憑證、端點、token 驗證這一層 |
+| 兩種模式 | `CMN_API_MODE=emulator｜firebase`。真實模式：專案 ID 要輸入兩次；拒絕 `demo-`；設有 `*_EMULATOR_HOST` 就拒絕；只能連該專案的 Firestore 文件與 `accounts:lookup` |
+| 真實 token 驗證 | `server/token-firebase.mjs`：RS256、Google 憑證、`iss`／`aud`／`sub`／時間；`accounts:lookup` 確認帳號存在、未停用、未撤銷（`auth_time` 與 `validSince` 比較，同 Admin SDK） |
+| API 自己的憑證 | `server/credentials.mjs`：負責人的 ADC（authorized_user）或 metadata；**拒絕服務帳戶金鑰檔** |
+| Firestore Rules | `firestore.rules`：用戶端一律拒絕 |
+| 開通帳號 | `server/admin.mjs`：bind／unbind／list／seed-fictional；只由負責人執行，有稽核；沒有自助加入，也沒有第一位管理員 |
+| 真實模式執行 | `server/main.mjs`：網頁與 API 在 `localhost:18400`；`signInWithPopup`；CSP 只多允許 Google 登入的主機 |
+| 頁面 | 永遠顯示目前班級；「尚未取得班級存取權」畫面顯示 UID（供負責人 `bind`） |
+| 啟動器 | Emulator 的 stack 改用**本 repository 的 API**（emulator 後端），前後仍是上游的 trace proxy，所有既有的驗收照舊 |
+
+### 操作
+
+- **模擬登入（Emulator）**：`docs/LOGIN.md`。
+- **真實 Google 登入（開發用專案）**：`docs/SETUP-FIREBASE.md`，需要負責人先完成 Console 設定。
+
+### 測試（作者，Linux，`3e04316`，工作目錄乾淨）
+
+| 類別 | 結果 | 說明 |
+|---|---|---|
+| `npm test` | **75/75** | 含模式防護 12 項、憑證 5 項、真實 token 驗證：偽造、未簽章、錯誤的 key、過期、其他專案、停用、撤銷、無法連線；URL 白名單；逐字複本的雜湊與上游 git 比對（`CMN_UPSTREAM_ROOT`） |
+| `e2e-login`（模擬登入） | **17/17** | L1～L13；L14 用戶端以自己的 token 直接寫 binding、membership 或讀資料都 403（本 repository 的 rules），沒有開通的 API 路由，偽造的 `principalId`／`role` 欄位 403；L15 管理腳本開通與撤銷 |
+| `firebase-mode`（真實模式程式路徑，Emulator） | **5/5** | `firebase` 後端：以測試金鑰簽章的 RS256 token；Emulator 的未簽章 token 被拒；交易規則（同一操作得到同一收據、內容不同→`OPERATION_REUSE_MISMATCH`、舊版本→`VERSION_CONFLICT`、只有 1 筆 revision、點名不變）；帳號停用、撤銷、binding 停用。**不是**真實 Google |
+| `e2e`（測試情境） | 21/21 | 改用本 repository 的 API 之後，原本的 11 項驗收照舊 |
+| `screens` | 36/36 | |
+| `launcher:test` | 4/4 | |
+| Mutation | 3 個都抓到 | 拿掉清除 → 3 項失敗；拿掉 UID 綁定 → L10 失敗；拿掉 403 的重新檢查 → L12 失敗；拿掉簽章檢查 → 單元測試 2 項失敗 |
+
+- **未執行**：
+  - **真實 Google 登入與真實 Cloud Firestore**：需要負責人的開發用專案與 ADC，見下方；
+  - Windows 上的新測試；
+  - 多裝置使用：需要部署。
+- `main.mjs` 的防護已實際確認：缺設定、專案不一致、缺 web config、設有 emulator 變數，都會 `REFUSED`。
+
+### 待負責人操作（`docs/SETUP-FIREBASE.md`）
+
+1. 建立開發用 Firebase 專案：
+   - Firestore 以正式版模式建立；
+   - 啟用 Google 登入；
+   - 確認授權網域有 `localhost`；
+   - 註冊網頁應用程式，把公開設定存成 `dev/firebase-web-config.json`。
+2. 安裝 gcloud，然後執行 `gcloud auth application-default login` 與 `set-quota-project`。
+3. 執行 `node server\admin.mjs seed-fictional ...` → `node server\main.mjs` → 用自己的 Google 帳號登入 → 看到 UID → `node server\admin.mjs bind --uid <UID> --principal ACTOR-SC01-TEACHER` → 按「重新檢查」。
+4. 回報結果（SETUP-FIREBASE.md 第 D 節）。
+
+### 缺口與待決（SPEC §12.8）
+
+- **G-A**：沒有「我的班級」API；目前以 W1 的固定目標詢問 API。
+- **G-B**：沒有管理介面。
+- **G-C**：多裝置使用需要部署：Hosting、Cloud Run、Blaze，需要負責人同意。
+- L-1（建議：管理腳本）、L-3（真實模式的 CSP 例外，已實作，待核准）、L-4（開發用專案）。
+
+## 第一批：Google 登入（模擬；PR #6）
 
 ### 本批改了什麼
 
@@ -340,3 +397,5 @@
 | 2026-11-27 | Claude | 只更新 HANDOFF；程式和 `93e3837` 相同；交負責人決定合併 |
 | 2026-11-28 | 負責人 → Claude | Firebase／Cloud Firestore 確定；新增 Google 登入；直接實作 |
 | 2026-11-28 | Claude | Google 登入（模擬，`f141bcc`）：e2e-login 15/15、E2E 21/21、單元 36/36；L3 PR；待決 L-1～L-4 |
+| 2026-11-28 | 負責人 → Claude | 直接實作 Firebase 實際模式（Firestore、Google 登入），不部署、不付費、不用真實資料 |
+| 2026-11-28 | Claude | 真實模式（`3e04316`）：npm test 75/75、e2e-login 17/17、firebase-mode 5/5、e2e 21/21；L3 PR；待負責人設定開發用專案 |
