@@ -9,7 +9,7 @@
  *  also written to CMN_STOP_RESULT so the launcher / tests can check it even when the launcher itself is gone.
  *  When this script ends, `firebase emulators:exec` shuts the emulators down itself. */
 import { existsSync, writeFileSync } from 'node:fs';
-import { openUpstream, startScenario } from './world.mjs';
+import { openUpstream, startScenario, startLogin, LOGIN_SCENARIO } from './world.mjs';
 import { runStop, STOP_TIMEOUT_MS, STOP_EXIT } from './stop.mjs';
 
 const stage2 = process.env.CMN_UPSTREAM_STAGE2; const scenario = process.env.CMN_SCENARIO; const webPort = Number(process.env.CMN_WEB_PORT);
@@ -17,8 +17,13 @@ const stopFile = process.env.CMN_STOP_FILE || null;
 const resultFile = process.env.CMN_STOP_RESULT || null;
 const launcherPid = Number(process.env.CMN_LAUNCHER_PID) || null;
 const up = await openUpstream(stage2);
-const s = await startScenario(up, { scenario, webPort });
+const s = scenario === LOGIN_SCENARIO ? await startLogin(up, { webPort }) : await startScenario(up, { scenario, webPort });
 console.log(`\nW1 ready — scenario ${scenario} (fictional data only)\nOpen: ${s.url}\nStop: Ctrl+C, or type q and Enter\n`);
+if (s.identities) {
+  console.log('Google sign-in (LOCAL Auth Emulator, fictional accounts — pick one in the sign-in window):');
+  for (const [email, v] of Object.entries(s.identities)) console.log(`  ${email}  ${v.grant ? `→ bound to ${v.grant}` : '→ NO class access (no binding)'}`);
+  console.log('');
+}
 
 const record = (r) => { if (resultFile) { try { writeFileSync(resultFile, JSON.stringify({ ...r, at: new Date().toISOString() })); } catch { /* reported by exit code */ } } };
 let stopping = false;

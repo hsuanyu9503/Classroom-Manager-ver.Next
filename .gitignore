@@ -1,2 +1,4 @@
 node_modules/
 test-results/
+# real (development) Firebase Web app settings: public identifiers, kept out of git anyway (SPEC §11.6)
+dev/firebase-web-config.json

@@ -11,7 +11,14 @@
  *    dot-segments, fragments, absolute-form, query strings, encodings etc. never match → 404, nothing forwarded.
  *  - Everything else: 404, nothing forwarded. No CORS headers are ever sent. A failure inside the handler answers a
  *    controlled 500 (static) / 502 (API) and never ends the process.
- *  The upstream is fixed at construction time; no request can choose a destination. */
+ *  The upstream is fixed at construction time; no request can choose a destination.
+ *
+ *  Two modes (exactly one per process):
+ *   - actor (test scenarios): the page's Authorization is DROPPED and the scenario actor's token is attached;
+ *   - login (Google sign-in, 2026-11-28): the proxy holds NO token at all. It forwards the page's own
+ *     `Authorization: Bearer <ID token>` (issued to the signed-in user by Firebase Authentication) unchanged, and
+ *     nothing else; a request without one is forwarded without Authorization (the API then refuses it). The API
+ *     verifies the token and authorizes every request itself. */
 import http from 'node:http';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -19,23 +26,30 @@ import path from 'node:path';
 export const API_PATHS = Object.freeze(['/v1/read', '/v1/commit', '/v1/receipt']);
 export const MAX_BODY = 64 * 1024;
 const STATIC_TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8' };
-const SECURITY_HEADERS = {
-  'cache-control': 'no-store',
-  'x-content-type-options': 'nosniff',
-  'referrer-policy': 'no-referrer',
-  'content-security-policy': "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
-};
+const BASE_HEADERS = { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' };
+/** CSP. Login mode additionally lets the page reach the Auth Emulator (sign-in REST + the sign-in iframe). */
+export const csp = (authOrigin = null) => `default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'${authOrigin ? ` ${authOrigin}` : ''}; img-src 'self'; frame-src ${authOrigin || "'none'"}; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`;
+/** the page's own token: one Bearer credential of JWT characters (emulator tokens have an empty signature) */
+const PAGE_BEARER_RE = /^Bearer [A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*$/;
 
 /** @param o.port         listening port on 127.0.0.1
  *  @param o.upstream     fixed upstream origin (the controlled API's front proxy), loopback only
- *  @param o.token        the scenario actor's Auth Emulator token (memory only)
- *  @param o.scenario     scenario code shown in the page banner (e.g. 'S-LEAVE-SC01')
+ *  @param o.token        actor mode: the scenario actor's Auth Emulator token (memory only); login mode: MUST be absent
+ *  @param o.scenario     scenario code shown in the page banner (e.g. 'S-LEAVE-SC01', 'LOGIN')
+ *  @param o.login        login mode: { authOrigin: 'http://127.0.0.1:9099', firebase: { apiKey, projectId, authDomain },
+ *                        emulatorAccounts: [{ email, name }] (fictional accounts for the emulator sign-in chooser) }
  *  @param o.webRoot      directory with the allow-listed static files
  *  @param o.staticFiles  { '/url': 'file-in-webRoot' } allow-list */
-export function createWebProxy({ port, upstream, token, scenario, webRoot, staticFiles }) {
+export function createWebProxy({ port, upstream, token, scenario, webRoot, staticFiles, login = null }) {
   const up = new URL(upstream);
   if (up.protocol !== 'http:' || up.hostname !== '127.0.0.1') throw new Error('proxy: upstream must be http://127.0.0.1:<port>');
-  if (typeof token !== 'string' || !token) throw new Error('proxy: token missing');
+  if (login) {
+    if (token !== undefined && token !== null) throw new Error('proxy: login mode holds no token');
+    const a = new URL(login.authOrigin);
+    if (a.protocol !== 'http:' || a.hostname !== '127.0.0.1' || a.pathname !== '/' || `${a.protocol}//${a.host}` !== login.authOrigin) throw new Error('proxy: authOrigin must be http://127.0.0.1:<port>');
+  } else if (typeof token !== 'string' || !token) throw new Error('proxy: token missing');
+  const SECURITY_HEADERS = { ...BASE_HEADERS, 'content-security-policy': csp(login ? login.authOrigin : null) };
+  const pageConfig = JSON.stringify(login ? { scenario, mode: 'login', firebase: login.firebase, authEmulator: login.authOrigin, emulatorAccounts: login.emulatorAccounts || [] } : { scenario });
   const stats = { forwarded: 0, rejected: 0 };
   const files = new Map(Object.entries(staticFiles).map(([u, f]) => [u, path.join(webRoot, f)]));
   let server; let boundPort = port;
@@ -55,7 +69,7 @@ export function createWebProxy({ port, upstream, token, scenario, webRoot, stati
     const target = req.url;
     if (req.method === 'GET' || req.method === 'HEAD') {
       const head = req.method === 'HEAD';
-      if (target === '/scenario.json') return send(res, 200, JSON.stringify({ scenario }), 'application/json; charset=utf-8', head);
+      if (target === '/scenario.json') return send(res, 200, pageConfig, 'application/json; charset=utf-8', head);
       if (!files.has(target)) return reject(res, 404);
       const f = files.get(target);
       let data;
@@ -78,8 +92,12 @@ export function createWebProxy({ port, upstream, token, scenario, webRoot, stati
       if (tooBig) return;
       stats.forwarded += 1;
       try {
-        // the page's Authorization (if any) is NOT copied; only the scenario token is attached here
-        const r = await fetch(`${up.origin}${p}`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: Buffer.concat(chunks), redirect: 'error', signal: AbortSignal.timeout(20000) });
+        // actor mode: the page's Authorization (if any) is NOT copied; only the scenario token is attached here.
+        // login mode: ONLY the page's own Bearer token is copied (well-formed, ≤ 8 KiB); the proxy adds nothing.
+        const headers = { 'content-type': 'application/json' };
+        if (!login) headers.authorization = `Bearer ${token}`;
+        else { const a = req.headers.authorization; if (typeof a === 'string' && a.length <= 8192 && PAGE_BEARER_RE.test(a)) headers.authorization = a; }
+        const r = await fetch(`${up.origin}${p}`, { method: 'POST', headers, body: Buffer.concat(chunks), redirect: 'error', signal: AbortSignal.timeout(20000) });
         const text = await r.text();
         send(res, r.status, text);
       } catch {

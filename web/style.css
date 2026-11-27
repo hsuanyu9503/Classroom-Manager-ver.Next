@@ -17,6 +17,25 @@ h2:focus-visible { outline: var(--focus-ring); outline-offset: 4px; border-radiu
 .site-sub { margin: 0; color: var(--color-muted); font-size: .9rem; }
 .scenario-banner { margin: 0; font-weight: 600; font-size: .9rem; padding: 4px 12px; background: var(--color-banner-bg); border: 2px dashed var(--color-banner-line); border-radius: 8px; }
 
+/* login mode: account bar, gate screens, class picker, parked-operation notice */
+.header-side { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 12px; }
+.auth-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.auth-user { font-size: .9rem; }
+.auth-label { color: var(--color-muted); }
+.auth-bar button { min-height: 40px; padding: 4px 14px; }
+.gate-card { grid-column: 1 / -1; max-width: 640px; justify-self: center; width: 100%; }
+.gate-card h2 { margin-bottom: 10px; }
+.gate-card p { margin: 0 0 8px; }
+.gate-notice { font-weight: 600; background: var(--color-surface-2); padding: 6px 10px; border-radius: 8px; }
+.gate-card[data-kind="noAccess"] { border-left: 8px solid var(--color-status-denied); }
+.class-bar { grid-column: 1 / -1; }
+.parked-notice { grid-column: 1 / -1; margin: 0; padding: 10px 14px; border: 2px dashed var(--color-status-unknown); background: var(--color-status-unknown-bg); color: var(--color-text); border-radius: var(--radius); font-weight: 600; }
+
+.account-list { display: grid; gap: 8px; margin: 8px 0 4px; }
+.account-list button { text-align: left; display: grid; gap: 2px; padding: 10px 14px; }
+.account-list .acc-email { font-weight: 400; font-size: .85rem; color: var(--color-muted); }
+.account-list .acc-new { border-style: dashed; }
+
 /* page layout */
 .layout { max-width: 1240px; margin: 0 auto; padding: 20px 24px 48px; display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); align-items: start; }
 .layout:focus { outline: none; }
