@@ -28,20 +28,30 @@
 - 照 `docs/acceptance/w1/CHECKLIST.md` 操作（已改成新版的文字與畫面）。
 - 合併之前，先在網站 checkout 執行 `git checkout claude/w1-ui-refresh`，再 `git pull`。
 
+### ChatGPT 審查（Reviewed Head `c8e4fbd`）
+
+- 新版介面的方向可以接受，有一項 P2。
+- **WEB5-REV-001（P2）**：完成後的文字固定寫「請假紀錄已重新讀取，顯示的是最新內容」，但重新讀取是之後才非同步進行的；讀取中、讀取失敗（503／斷線）或被拒（403）時，這句話不成立。
+  - 修正（`ce5734a`）：完成的說明改為依重新讀取的實際狀態顯示：讀取中／成功／失敗。「完成」與收據保留，不會重送，也不會產生新的 operationId。
+  - 新增 E2E item 2b × 3：完成後的重新讀取「變慢」「503 後按重試」「403」。
+  - 修正前的 `app.js`（`c8e4fbd`）跑這 3 項全部失敗；作者在獨立目錄中執行，單次。
+- **非阻擋**：第一次送出就被拒絕的文字，由「沒有送出任何修改」改為「這次更正未獲允許，沒有修改資料。」
+- 審查者在 Windows 執行 `npm test`：33/33（`c8e4fbd`）。
+
 ### 測試
 
-- **已通過**（作者，Linux，`cb601bb`，工作目錄乾淨）：
-  - `npm run e2e` 18/18。新增的檢查：送出後焦點移到結果；按鈕旁的說明（尚未確認、已是全天）；S-DENY 不顯示日期與更正區。
+- **已通過**（作者，Linux，`ce5734a`，工作目錄乾淨）：
+  - `npm run e2e` **21/21**：原本的 18 項，加上 2b × 3。
   - `npm test` 33/33。
-  - `npm run screens` 36/36：四種尺寸 × 9 個畫面，沒有水平溢出，見 `docs/acceptance/w1/SCREENS.md`。
+  - `npm run screens` 36/36：沒有水平溢出，見 `docs/acceptance/w1/SCREENS.md`。
 - **沿用**（未受影響）：
-  - Windows 單元測試 33/33：`b935427`，之後 `dev/` 沒有改；
+  - Windows 單元測試 33/33：審查者 `c8e4fbd`；負責人與審查者 `b935427`。之後 `dev/` 沒有改。
   - lifecycle 3/3：`b5f0cbb`；
   - Ctrl+C CLEAN：`b935427`。
 - **未執行**：
   - 新版介面在 Windows 瀏覽器（Edge／Chrome）的實際操作，請負責人照清單操作；
   - Firefox、Safari；實體手機與平板；螢幕閱讀器；
-  - `denied`、`invalid`、`error` 三個狀態沒有在 E2E 中觸發。
+  - `invalid`、`error` 兩個狀態沒有在 E2E 中觸發；`denied`（第一次送出就 403）也沒有在 E2E 中觸發。
 - **只經人工檢視**：截圖的版面與文字（作者）。
 
 ## W1 驗收：待決事項（2026-11-27 更新）
@@ -263,3 +273,5 @@
 | 2026-11-26 | Claude | 驗收截圖 36 張（`2661dd2`）、CHECKLIST、待決事項 AQ-1～4；E2E 18/18、單元 33/33（Linux） |
 | 2026-11-27 | 負責人 → Claude | 往實作推進：W1 新版介面與操作流程 |
 | 2026-11-27 | Claude | 介面改版（`cb601bb`）：E2E 18/18、單元 33/33、截圖 36/36（Linux）；CHECKLIST、DESIGN 更新；交 ChatGPT 審查 |
+| 2026-11-27 | ChatGPT → Claude | PR #5 審查（Reviewed Head `c8e4fbd`）：方向可以接受；WEB5-REV-001（P2）；拒絕的文字（非阻擋） |
+| 2026-11-27 | Claude | WEB5-REV-001 修正（`ce5734a`）：E2E 21/21、單元 33/33、截圖 36/36（Linux）；舊 app.js 的 2b 全部失敗 |

@@ -1,7 +1,7 @@
 # W1 實際畫面（驗收用）
 
-> - **產生的版本**：`cb601bb3f3ff67a778dac25392d9dcabcb8d0265`（分支 `claude/w1-ui-refresh`，工作目錄乾淨）。這是**新版介面**（2026-11-27）。
->   - 改版前的 36 張（`2661dd2`）保留在 git 歷史中。
+> - **產生的版本**：`ce5734ab301a9ca94403b43d0326aa9bc3461743`（分支 `claude/w1-ui-refresh`，工作目錄乾淨）。這是**新版介面**（2026-11-27），已包含 WEB5-REV-001 的修正。
+>   - 先前的截圖保留在 git 歷史中：`cb601bb`（修正前）、`2661dd2`（改版前）。
 >   - 上游 API：`1e20989`。
 > - **產生的方式**：`npm run screens -- --upstream <path>`（`test/screens.mjs`）。
 >   - 真正的頁面、真正的 Auth／Firestore Emulator、固定版本的受控 API；Playwright 1.63.0 的 Chromium，deviceScaleFactor 1；作者在 Linux 執行，2026-11-27。

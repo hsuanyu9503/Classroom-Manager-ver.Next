@@ -292,7 +292,7 @@
   ],
   "problems": [],
   "generatedAt": "2026-11-27",
-  "head": "cb601bb3f3ff67a778dac25392d9dcabcb8d0265",
-  "web": "UI refresh (claude/w1-ui-refresh)",
-  "previousSet": "2661dd2 (before the UI refresh, see git history)"
+  "head": "ce5734ab301a9ca94403b43d0326aa9bc3461743",
+  "web": "UI refresh + WEB5-REV-001 fix",
+  "previousSet": "cb601bb (UI refresh before WEB5-REV-001) and 2661dd2 (before the UI refresh); see git history"
 }
