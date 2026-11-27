@@ -1,0 +1,91 @@
+{
+  "upstreamCommit": "1e20989ea6393c12dd18e11db617873c297a9f4a",
+  "kind": "SIMULATED Google sign-in (Auth Emulator)",
+  "results": [
+    {
+      "name": "L1 not signed in: 「請先登入」, no class data in the page, ZERO API requests reached the upstream",
+      "ok": true,
+      "detail": "api=0 data="
+    },
+    {
+      "name": "L2 sign-in cancelled: 「已取消登入，沒有任何變更」, still signed out, no API request",
+      "ok": true,
+      "detail": "已取消登入，沒有任何變更。"
+    },
+    {
+      "name": "L3 sign-in fails (auth service unreachable): clear message, button usable again, still signed out, no API request",
+      "ok": true,
+      "detail": "無法連線到登入服務，請稍後再試。"
+    },
+    {
+      "name": "L4 signed in without a binding (no-access@example.test): 「尚未取得班級存取權」, no class data; every request was made with THIS uid and denied BINDING_NOT_FOUND (no auto-grant)",
+      "ok": true,
+      "detail": "gate=noAccess text=true data= deny=true audits=2 BINDING_NOT_FOUND allAudits=[[\"5UDpZRoJsqI63v3xnwhkIPok5sUk\",\"BINDING_NOT_FOUND\"],[\"5UDpZRoJsqI63v3xnwhkIPok5sUk\",\"BINDING_NOT_FOUND\"]] keys=auditLogUnscoped/1371ef13-0c97-4622-b032-6b35a88474fb,auditLogUnscoped/22735b03-8d63-4d7a-9b2b-578185c9fd38"
+    },
+    {
+      "name": "L4 signed in without a binding (brand-new emulator Google account): 「尚未取得班級存取權」, no class data; every request was made with THIS uid and denied BINDING_NOT_FOUND (no auto-grant)",
+      "ok": true,
+      "detail": "gate=noAccess text=true data= deny=true audits=2 BINDING_NOT_FOUND allAudits=[[\"5UDpZRoJsqI63v3xnwhkIPok5sUk\",\"BINDING_NOT_FOUND\"],[\"5UDpZRoJsqI63v3xnwhkIPok5sUk\",\"BINDING_NOT_FOUND\"],[\"5wAiNu6stpb8ojl61x4qKqkIN4PO\",\"BINDING_NOT_FOUND\"]] keys=auditLogUnscoped/22735b03-8d63-4d7a-9b2b-578185c9fd38,auditLogUnscoped/78f0b425-c840-42eb-9d23-0fcdd10d3ce0"
+    },
+    {
+      "name": "L5 SC01 teacher sees ONLY SC01 (LV-007); A17 is refused even when asked directly or with a forged claimed scope; every allowed request was made with the user's own Google uid",
+      "ok": true,
+      "detail": "{\"a17\":403,\"a17claimSC01\":403,\"sc01\":200}"
+    },
+    {
+      "name": "L6 reload: the sign-in is restored by the SDK (this tab only) and the data is read again",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "L7 AM→全天 succeeds (v6) signed in; the commit was authorized for the signed-in Google uid; one revision",
+      "ok": true,
+      "detail": "commits=1 revisions=1"
+    },
+    {
+      "name": "L8 two signed-in tabs: one 完成, one 衝突; after 重新讀取 nothing more is sent; one revision",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "L9 signed in: response lost → 尚未確認 → 重新送出同一操作 → original receipt; one revision, one operationId",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "L10 logout with an unconfirmed operation: asked first (cancel keeps the sign-in); after logout and as ANOTHER account no data and no operation is shown, nothing is sent or queried for it (notice shown); the SAME account gets it back and 查詢結果 returns the original receipt",
+      "ok": true,
+      "detail": "stillIn=true asked=true leakOut= leakOther= outData= outOp=false otherData= otherOp=false parked=true commits 1→1 api@logout=6 otherReceipts=0 back=true done=true opIds=1"
+    },
+    {
+      "name": "L11 switching account (SC01 → A17): after logout nothing of SC01 remains in the DOM (hidden elements included); A17 sees only its own 15-row roster, no leave record",
+      "ok": true,
+      "detail": "rows=15 leakBetween= leakA17="
+    },
+    {
+      "name": "L12 account disabled while signed in: the next read is refused → the token refresh fails → 「登入已失效」, signed out, no data left",
+      "ok": true,
+      "detail": "登入已失效，請重新登入。"
+    },
+    {
+      "name": "L13 binding revoked while signed in: the next read is refused → re-check → 「尚未取得班級存取權」, no data left, still signed in",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "L14 a signed-in client cannot give itself access: direct Firestore writes/reads with its own token → 403 (this repository's firestore.rules), no API route for bindings (404), forged principalId / role fields → 403; no binding was created",
+      "ok": true,
+      "detail": "rules=200 {\"selfBind\":403,\"selfMember\":403,\"readMembers\":403,\"readLeave\":403} api={\"bindRoute\":404,\"roleField\":403}"
+    },
+    {
+      "name": "L15 a new account has no access until the owner's admin script binds it (an unknown principal is refused); 重新檢查 then shows SC01; unbinding takes effect on the next read; each admin change is audited",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "login screens: no horizontal overflow at 390×844, 820×1180, 1440×900, 1024×768 (signed out and signed in)",
+      "ok": true,
+      "detail": "none"
+    }
+  ]
+}

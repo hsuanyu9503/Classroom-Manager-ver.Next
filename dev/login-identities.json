@@ -1,0 +1,8 @@
+{
+  "_comment": "FICTIONAL Google identities created in the LOCAL Auth Emulator only (example.test is a reserved, non-routable domain). A binding to a principal is written ONLY for entries with a non-null grant: signing in never grants anything by itself. Owner-reviewed config, not a product feature.",
+  "identities": [
+    { "email": "teacher.sc01@example.test", "name": "虛構導師（SC01 班）", "grant": "ACTOR-SC01-TEACHER" },
+    { "email": "teacher.a17@example.test", "name": "虛構導師（A17 班）", "grant": "ACTOR-TEACHER" },
+    { "email": "no-access@example.test", "name": "尚未授權的虛構使用者", "grant": null }
+  ]
+}

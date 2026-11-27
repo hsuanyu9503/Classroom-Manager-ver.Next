@@ -15,10 +15,31 @@
       <h1>Classroom Manager <span class="brand-sub">ver.Next</span></h1>
       <p class="site-sub">點名與請假｜W1 開發版</p>
     </div>
-    <p class="scenario-banner" id="scenarioBanner" role="note">測試情境：讀取中…｜虛構資料｜暫定色票</p>
+    <div class="header-side">
+      <p class="scenario-banner" id="scenarioBanner" role="note">測試情境：讀取中…｜虛構資料｜暫定色票</p>
+      <div class="auth-bar" id="authBar" hidden>
+        <span class="auth-user"><span class="auth-label">已登入</span> <span id="authUser"></span></span>
+        <button type="button" id="logoutButton">登出</button>
+      </div>
+    </div>
   </header>
 
   <main id="main" class="layout" tabindex="-1">
+    <p class="parked-notice" id="parkedNotice" role="status" hidden></p>
+
+    <section class="card gate-card" id="gate" aria-labelledby="gateTitle" aria-live="polite" hidden>
+      <h2 id="gateTitle"></h2>
+      <div id="gateBody"></div>
+      <div class="actions" id="gateActions"></div>
+    </section>
+
+    <div class="class-bar" id="classBar" hidden>
+      <label class="date-field">目前班級
+        <select id="classSelect"></select>
+        <span class="class-only" id="classOnly" hidden></span>
+      </label>
+    </div>
+
     <section class="card roster-card" aria-labelledby="p1Title" id="p1">
       <div class="card-head">
         <h2 id="p1Title">點名名冊</h2>
@@ -56,11 +77,21 @@
           <li>點名狀態 P／R／N／U 與假別（例如 SICK-LEAVE）的中文名稱尚未決定，暫時顯示代碼。</li>
           <li>日期只能選測試資料中已有的點名場次。</li>
           <li>色彩是<strong>暫定色票</strong>，尚未經負責人核准。</li>
+          <li id="devLogin" hidden>登入使用這台電腦上的 Firebase <strong>Auth Emulator</strong> 的 Google 登入（虛構帳號），不是真的 Google 帳號。登入只確認身分；能看哪個班級，由後端的授權綁定決定。登入狀態由 Firebase SDK 保存在<strong>這個分頁</strong>的 sessionStorage，關閉分頁就會登出。</li>
           <li id="devScope">班級：讀取中…</li>
         </ul>
       </details>
     </footer>
   </main>
+
+  <dialog id="accountDialog" aria-labelledby="accountTitle" aria-describedby="accountHint">
+    <h2 id="accountTitle">選擇登入帳號（模擬登入）</h2>
+    <p class="hint" id="accountHint">這是這台電腦上 Auth Emulator 的<strong>模擬</strong> Google 登入，只有虛構帳號，不是真的 Google 登入。</p>
+    <div class="account-list" id="accountList"></div>
+    <div class="actions">
+      <button type="button" id="accountCancel">取消</button>
+    </div>
+  </dialog>
 
   <dialog id="confirmDialog" aria-labelledby="confirmTitle" aria-describedby="confirmText">
     <h2 id="confirmTitle">確認更正請假時段</h2>

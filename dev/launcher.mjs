@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /** W1 development launcher (SPEC §3). Development machines only — not a feature of the page.
- *    node dev/launcher.mjs --upstream <class-management-next checkout> --scenario <S-ROSTER-A17|S-LEAVE-SC01|S-DENY>
+ *    node dev/launcher.mjs --upstream <class-management-next checkout> --scenario <S-ROSTER-A17|S-LEAVE-SC01|S-DENY|LOGIN>
+ *  LOGIN = Google sign-in against the LOCAL Auth Emulator (fictional accounts); the web proxy holds no token.
  *  1. the upstream checkout must be at the pinned commit with a clean poc/stage2;
  *  2. every emulator / API / proxy port must be confirmed closed;
  *  3. `firebase emulators:exec` runs dev/stack.mjs: a fresh fictional world, the upstream stack, the web proxy;
@@ -24,11 +25,11 @@ import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { checkUpstream, requirePortsClosed, importUpstream, UPSTREAM_PORTS, WEB_PORT, UpstreamError } from './upstream.mjs';
-import { SCENARIOS } from './world.mjs';
+import { SCENARIOS, LOGIN_SCENARIO } from './world.mjs';
 
 const arg = (n) => { const i = process.argv.indexOf(n); return i > 0 ? process.argv[i + 1] : null; };
 const scenario = arg('--scenario'); const upstream = arg('--upstream') ? path.resolve(arg('--upstream')) : null;
-if (!Object.hasOwn(SCENARIOS, scenario || '') || !upstream) { console.log(`usage: node dev/launcher.mjs --upstream <path> --scenario <${Object.keys(SCENARIOS).join('|')}>`); process.exit(2); }
+if (!(Object.hasOwn(SCENARIOS, scenario || '') || scenario === LOGIN_SCENARIO) || !upstream) { console.log(`usage: node dev/launcher.mjs --upstream <path> --scenario <${[...Object.keys(SCENARIOS), LOGIN_SCENARIO].join('|')}>`); process.exit(2); }
 try {
   const u = checkUpstream(upstream);
   await requirePortsClosed(u.stage2, [...UPSTREAM_PORTS, WEB_PORT]);

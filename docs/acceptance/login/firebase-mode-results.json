@@ -1,0 +1,30 @@
+{
+  "kind": "firebase-mode API code path on local emulators with a TEST signing key — NOT real Google",
+  "results": [
+    {
+      "name": "F1 firebase mode, signed token: own class 200; another workspace 403; forged claimed scope 403; audited with the verified uid",
+      "ok": true,
+      "detail": "own=200 other=403 forged=403"
+    },
+    {
+      "name": "F2 firebase mode refuses: a genuine EMULATOR (unsigned) token, a tampered uid, an unknown key, expired, another project, no token, a non-existent user, garbage — all the same 403, each reason audited",
+      "ok": true,
+      "detail": "{\"emulatorToken\":403,\"tamperedUid\":403,\"unknownKid\":403,\"expired\":403,\"otherProject\":403,\"noToken\":403,\"notAUser\":403,\"garbage\":403}"
+    },
+    {
+      "name": "F3 firebase mode keeps the W1 rules: commit → receipt; same operation again → the SAME receipt; same id, other content → OPERATION_REUSE_MISMATCH; new operation on the old version → VERSION_CONFLICT; receipt query; ONE revision; attendance unchanged",
+      "ok": true,
+      "detail": "commit=200 again=200 mismatch=OPERATION_REUSE_MISMATCH stale=VERSION_CONFLICT receipt=200 revisions=1"
+    },
+    {
+      "name": "F3b another user cannot read this receipt (403)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "F4 firebase mode checks state on every request: disabled account → 403; token older than validSince (revoked) → 403, a newer one 200; binding disabled → 403",
+      "ok": true,
+      "detail": "disabled=403 revoked=403(update 200) fresh=200 unbound=403"
+    }
+  ]
+}

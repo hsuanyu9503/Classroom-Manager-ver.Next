@@ -129,3 +129,62 @@ test('WEB2-REV-001: malformed request-targets get a controlled answer and the pr
   assert.equal(await rawTarget('GET', '/'), 200, 'still serving static');
   assert.equal(await rawTarget('POST', '/v1/read'), 200, 'still serving the API');
 });
+
+/* Google sign-in (login mode): the proxy holds NO token; it forwards only the page's own well-formed Bearer token. */
+test('login mode: the page\'s own Bearer token is forwarded unchanged; no token is ever added', async () => {
+  const lp = createWebProxy({ port: 0, upstream: `http://127.0.0.1:${upPort}`, scenario: 'LOGIN', webRoot: WEB, staticFiles: { '/': 'index.html' }, login: { authOrigin: 'http://127.0.0.1:9099', firebase: { apiKey: 'demo-api-key', projectId: 'demo-x', authDomain: 'demo-x.firebaseapp.com' } } });
+  const lport = await lp.listen();
+  const post = (headers) => new Promise((resolve) => {
+    const r = http.request({ host: '127.0.0.1', port: lport, path: '/v1/read', method: 'POST', headers: { host: `127.0.0.1:${lport}`, origin: `http://127.0.0.1:${lport}`, 'content-type': 'application/json', ...headers }, setHost: false }, (x) => { x.resume(); x.on('end', () => resolve(x.statusCode)); });
+    r.end('{"op":"x"}');
+  });
+  try {
+    const userToken = 'eyJhbGciOiJub25lIn0.eyJzdWIiOiJ1In0.';
+    let n = seen.length;
+    assert.equal(await post({ authorization: `Bearer ${userToken}` }), 200);
+    assert.equal(seen.at(-1).auth, `Bearer ${userToken}`, 'forwarded unchanged');
+    assert.equal(await post({}), 200);
+    assert.equal(seen.at(-1).auth, undefined, 'no Authorization → none forwarded (the API refuses)');
+    for (const bad of ['Basic abc', 'Bearer a b', `Bearer ${userToken}\r\nx: y`.slice(0, 20), 'Bearer abc', `bearer ${userToken}`]) {
+      await post({ authorization: bad }); assert.equal(seen.at(-1).auth, undefined, bad);
+    }
+    assert.equal(seen.length, n + 7);
+    assert.ok(!seen.slice(n).some((e) => e.auth === `Bearer ${TOKEN}`), 'the actor token never appears');
+    const cfg = await new Promise((resolve) => http.get({ host: '127.0.0.1', port: lport, path: '/scenario.json', headers: { host: `127.0.0.1:${lport}` } }, (x) => { let b = ''; x.on('data', (d) => { b += d; }); x.on('end', () => resolve({ body: JSON.parse(b), csp: x.headers['content-security-policy'] })); }));
+    assert.deepEqual(cfg.body, { scenario: 'LOGIN', mode: 'login', firebase: { apiKey: 'demo-api-key', projectId: 'demo-x', authDomain: 'demo-x.firebaseapp.com' }, authEmulator: 'http://127.0.0.1:9099', emulatorAccounts: [] });
+    assert.ok(!JSON.stringify(cfg.body).includes(TOKEN));
+    assert.match(cfg.csp, /connect-src 'self' http:\/\/127\.0\.0\.1:9099;/); assert.match(cfg.csp, /frame-src http:\/\/127\.0\.0\.1:9099;/); assert.match(cfg.csp, /script-src 'self';/);
+    // cross-origin is still refused in login mode
+    assert.equal(await new Promise((resolve) => { const r = http.request({ host: '127.0.0.1', port: lport, path: '/v1/read', method: 'POST', headers: { host: `127.0.0.1:${lport}`, origin: 'http://evil.example', 'content-type': 'application/json', authorization: `Bearer ${userToken}` }, setHost: false }, (x) => { x.resume(); resolve(x.statusCode); }); r.end('{}'); }), 403);
+  } finally { await lp.close(); }
+});
+test('login mode refuses a token, and a non-loopback auth origin, at construction; actor mode CSP has no frame/auth origin', async () => {
+  const base = { port: 0, upstream: `http://127.0.0.1:${upPort}`, scenario: 'LOGIN', webRoot: WEB, staticFiles: {} };
+  assert.throws(() => createWebProxy({ ...base, token: 'x', login: { authOrigin: 'http://127.0.0.1:9099', firebase: {} } }));
+  assert.throws(() => createWebProxy({ ...base, login: { authOrigin: 'http://example.com:9099', firebase: {} } }));
+  assert.throws(() => createWebProxy({ ...base, login: { authOrigin: 'http://127.0.0.1:9099/x', firebase: {} } }));
+  const r = await raw({ p: '/' });
+  assert.match(r.headers['content-security-policy'], /connect-src 'self';/); assert.match(r.headers['content-security-policy'], /frame-src 'none';/);
+});
+test('the committed Firebase bundle equals a fresh build from the locked package (scripts/build-vendor.mjs --check)', async () => {
+  const { spawnSync } = await import('node:child_process');
+  const r = spawnSync(process.execPath, [path.join(WEB, '..', 'scripts', 'build-vendor.mjs'), '--check'], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+});
+
+test('REAL Google sign-in mode (development project): CSP allows ONLY Google\'s sign-in hosts; no emulator config; no token held', async () => {
+  const base = { port: 0, upstream: `http://127.0.0.1:${upPort}`, scenario: 'LOGIN', webRoot: WEB, staticFiles: { '/': 'index.html' } };
+  assert.throws(() => createWebProxy({ ...base, login: { real: true, firebase: { authDomain: 'evil.example.com', projectId: 'p' } } }), /authDomain/);
+  assert.throws(() => createWebProxy({ ...base, login: { real: true, authOrigin: 'http://127.0.0.1:9099', firebase: { authDomain: 'cmn-dev.firebaseapp.com' } } }));
+  assert.throws(() => createWebProxy({ ...base, token: 't', login: { real: true, firebase: { authDomain: 'cmn-dev.firebaseapp.com' } } }));
+  const rp = createWebProxy({ ...base, login: { real: true, firebase: { apiKey: 'k', authDomain: 'cmn-dev.firebaseapp.com', projectId: 'cmn-dev', appId: 'a' } } });
+  const p = await rp.listen();
+  try {
+    const r = await new Promise((resolve) => http.get({ host: '127.0.0.1', port: p, path: '/scenario.json', headers: { host: `127.0.0.1:${p}` } }, (x) => { let b = ''; x.on('data', (d) => { b += d; }); x.on('end', () => resolve({ body: JSON.parse(b), csp: x.headers['content-security-policy'] })); }));
+    assert.deepEqual(r.body, { scenario: 'LOGIN', mode: 'login', firebase: { apiKey: 'k', authDomain: 'cmn-dev.firebaseapp.com', projectId: 'cmn-dev', appId: 'a' }, projectLabel: 'cmn-dev' });
+    assert.match(r.csp, /script-src 'self' https:\/\/apis\.google\.com;/);
+    assert.match(r.csp, /connect-src 'self' https:\/\/identitytoolkit\.googleapis\.com https:\/\/securetoken\.googleapis\.com https:\/\/www\.googleapis\.com;/);
+    assert.match(r.csp, /frame-src https:\/\/cmn-dev\.firebaseapp\.com https:\/\/apis\.google\.com;/);
+    assert.doesNotMatch(r.csp, /127\.0\.0\.1|unsafe|\*/);
+  } finally { await rp.close(); }
+});

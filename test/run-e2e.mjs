@@ -11,7 +11,7 @@ import { checkUpstream, requirePortsClosed, importUpstream, UPSTREAM_PORTS, WEB_
 
 const i = process.argv.indexOf('--upstream'); const upstream = i > 0 ? path.resolve(process.argv[i + 1]) : null;
 const si = process.argv.indexOf('--script'); const script = si > 0 ? process.argv[si + 1] : 'e2e';
-if (!upstream || !['e2e', 'screens'].includes(script)) { console.log('usage: node test/run-e2e.mjs --upstream <path> [--script e2e|screens]'); process.exit(2); }
+if (!upstream || !['e2e', 'screens', 'e2e-login', 'firebase-mode'].includes(script)) { console.log('usage: node test/run-e2e.mjs --upstream <path> [--script e2e|screens|e2e-login|firebase-mode]'); process.exit(2); }
 const PORTS = [...UPSTREAM_PORTS, WEB_PORT, 18401, 18402];
 try {
   const u = checkUpstream(upstream);

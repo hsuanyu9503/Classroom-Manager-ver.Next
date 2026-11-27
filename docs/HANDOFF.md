@@ -1,11 +1,124 @@
 # HANDOFF｜目前工作與交接狀態
 
-## 目前狀態（2026-11-27）
+## 目前狀態（2026-11-28，第二批：Firebase 實際模式）
 
-- 目前任務：**W1 新版介面與操作流程**（負責人指示：往實作推進，驗收隨實作進行）。
-  - 分支 `claude/w1-ui-refresh`，從 PR #4（`8e633c6`，驗收準備，尚未合併）接續。
-  - 範圍仍是 W1：名冊與摘要唯讀、請假摘要與「上午更正為全天」、衝突與結果確認。
-- 基準：`main` `ba1909f`。上游受控 API 固定為 `1e20989`；沒有修改授權、資料模型或 API。
+- 目前任務：**Firebase 實際模式**（負責人指示）：
+  - Cloud Firestore 加上 Firebase Authentication（Google）；
+  - 受控 API 驗證**真實**的 Firebase ID token；
+  - 第一個可完整操作的版本。
+- 分支 `claude/firebase-real-mode`，從 PR #6（`002e667`，模擬登入，**尚未合併**）接續。基準 `main` `7958af3`：PR #5 已合併，含 R1 的修正 `ff9ea2d`；PR #4 已合併。
+- 上游 `class-management-next` **沒有修改**：受控 API 的業務邏輯以 `1e20989` 的逐字複本放在 `server/upstream/`，由 `npm test` 核對 SHA-256，也與上游 git 歷史逐字比對。
+
+### 第二批改了什麼
+
+| 部分 | 內容 |
+|---|---|
+| API 位置 | `server/`：受控 API 移到本 repository。授權、請求格式、交易／版本／operationId／收據，都是上游逐字複本；只 fork 憑證、端點、token 驗證這一層 |
+| 兩種模式 | `CMN_API_MODE=emulator｜firebase`。真實模式：專案 ID 要輸入兩次；拒絕 `demo-`；設有 `*_EMULATOR_HOST` 就拒絕；只能連該專案的 Firestore 文件與 `accounts:lookup` |
+| 真實 token 驗證 | `server/token-firebase.mjs`：RS256、Google 憑證、`iss`／`aud`／`sub`／時間；`accounts:lookup` 確認帳號存在、未停用、未撤銷（`auth_time` 與 `validSince` 比較，同 Admin SDK） |
+| API 自己的憑證 | `server/credentials.mjs`：負責人的 ADC（authorized_user）或 metadata；**拒絕服務帳戶金鑰檔** |
+| Firestore Rules | `firestore.rules`：用戶端一律拒絕 |
+| 開通帳號 | `server/admin.mjs`：bind／unbind／list／seed-fictional；只由負責人執行，有稽核；沒有自助加入，也沒有第一位管理員 |
+| 真實模式執行 | `server/main.mjs`：網頁與 API 在 `localhost:18400`；`signInWithPopup`；CSP 只多允許 Google 登入的主機 |
+| 頁面 | 永遠顯示目前班級；「尚未取得班級存取權」畫面顯示 UID（供負責人 `bind`） |
+| 啟動器 | Emulator 的 stack 改用**本 repository 的 API**（emulator 後端），前後仍是上游的 trace proxy，所有既有的驗收照舊 |
+
+### 操作
+
+- **模擬登入（Emulator）**：`docs/LOGIN.md`。
+- **真實 Google 登入（開發用專案）**：`docs/SETUP-FIREBASE.md`，需要負責人先完成 Console 設定。
+
+### 測試（作者，Linux，`3e04316`，工作目錄乾淨）
+
+| 類別 | 結果 | 說明 |
+|---|---|---|
+| `npm test` | **75/75** | 含模式防護 12 項、憑證 5 項、真實 token 驗證：偽造、未簽章、錯誤的 key、過期、其他專案、停用、撤銷、無法連線；URL 白名單；逐字複本的雜湊與上游 git 比對（`CMN_UPSTREAM_ROOT`） |
+| `e2e-login`（模擬登入） | **17/17** | L1～L13；L14 用戶端以自己的 token 直接寫 binding、membership 或讀資料都 403（本 repository 的 rules），沒有開通的 API 路由，偽造的 `principalId`／`role` 欄位 403；L15 管理腳本開通與撤銷 |
+| `firebase-mode`（真實模式程式路徑，Emulator） | **5/5** | `firebase` 後端：以測試金鑰簽章的 RS256 token；Emulator 的未簽章 token 被拒；交易規則（同一操作得到同一收據、內容不同→`OPERATION_REUSE_MISMATCH`、舊版本→`VERSION_CONFLICT`、只有 1 筆 revision、點名不變）；帳號停用、撤銷、binding 停用。**不是**真實 Google |
+| `e2e`（測試情境） | 21/21 | 改用本 repository 的 API 之後，原本的 11 項驗收照舊 |
+| `screens` | 36/36 | |
+| `launcher:test` | 4/4 | |
+| Mutation | 4 個都抓到 | 拿掉清除 → 3 項失敗；拿掉 UID 綁定 → L10 失敗；拿掉 403 的重新檢查 → L12 失敗；拿掉簽章檢查 → 單元測試 2 項失敗 |
+
+- **未執行**：
+  - **真實 Google 登入與真實 Cloud Firestore**：需要負責人的開發用專案與 ADC，見下方；
+  - Windows 上的新測試；
+  - 多裝置使用：需要部署。
+- `main.mjs` 的防護已實際確認：缺設定、專案不一致、缺 web config、設有 emulator 變數，都會 `REFUSED`。
+
+### 待負責人操作（`docs/SETUP-FIREBASE.md`）
+
+1. 建立開發用 Firebase 專案：
+   - Firestore 以正式版模式建立；
+   - 啟用 Google 登入；
+   - 確認授權網域有 `localhost`；
+   - 註冊網頁應用程式，把公開設定存成 `dev/firebase-web-config.json`。
+2. 安裝 gcloud，然後執行 `gcloud auth application-default login` 與 `set-quota-project`。
+3. 執行 `node server\admin.mjs seed-fictional ...` → `node server\main.mjs` → 用自己的 Google 帳號登入 → 看到 UID → `node server\admin.mjs bind --uid <UID> --principal ACTOR-SC01-TEACHER` → 按「重新檢查」。
+4. 回報結果（SETUP-FIREBASE.md 第 D 節）。
+
+### 缺口與待決（SPEC §12.8）
+
+- **G-A**：沒有「我的班級」API；目前以 W1 的固定目標詢問 API。
+- **G-B**：沒有管理介面。
+- **G-C**：多裝置使用需要部署：Hosting、Cloud Run、Blaze，需要負責人同意。
+- L-1（建議：管理腳本）、L-3（真實模式的 CSP 例外，已實作，待核准）、L-4（開發用專案）。
+
+## 第一批：Google 登入（模擬；PR #6）
+
+### 本批改了什麼
+
+| 部分 | 內容 |
+|---|---|
+| 頁面 | 登入閘門：未登入／確認中／尚未取得班級存取權；帳號列與登出；只顯示 API 允許的班級；每次請求附上**登入者自己的** ID token |
+| 帳號變更 | 登出或切換帳號時清除 DOM 中所有前一位使用者的資料；遲到的回應丟棄；尚未確認的操作綁定 UID：不會用其他帳號查詢或重送，同一帳號重新登入後恢復 |
+| 失效與撤銷 | 讀取被拒時先 `reload()` 並重新取得 token：帳號停用或登入失效 →「登入已失效」；授權被撤銷 →「尚未取得班級存取權」；不會停在載入中 |
+| 本機代理 | 登入模式**不持有任何 token**，只轉送頁面自己的 `Bearer` token；CSP 只多允許 Auth Emulator 的 origin；測試情境（actor）模式不變 |
+| 模擬登入 | 啟動器在 Auth Emulator 建立虛構 Google 帳號（`dev/login-identities.json`），只為設定中有 `grant` 的帳號寫入綁定；開發用的帳號選擇窗 |
+| SDK | Firebase Auth 13.3.0，以 `scripts/build-vendor.mjs` 打包到 `web/vendor/`，`npm test` 會核對；不使用 CDN |
+| 規格 | SPEC §11（新增），並在 §1、§2.3、§3、§5、§7、§9 標示本批的變更；`docs/LOGIN.md`；真實專案的設定範本 `dev/firebase-web-config.example.json` |
+
+### 如何操作
+
+- `node dev/launcher.mjs --upstream <path> --scenario LOGIN`，詳見 `docs/LOGIN.md`。
+- 原本的測試情境（`S-LEAVE-SC01` 等）照舊可以使用。
+
+### 測試（**模擬登入**，不是真的 Google 登入）
+
+- **已通過**（作者，Linux，`f141bcc`，工作目錄乾淨）：
+  - `npm run e2e -- --script e2e-login` **15/15**：
+    - L1 未登入：沒有任何 API 請求；
+    - L2 取消；L3 失敗（Auth 服務無法連線）；
+    - L4 沒有綁定的帳號，以及全新帳號：「尚未取得班級存取權」，稽核紀錄顯示以該 UID 被拒，原因 `BINDING_NOT_FOUND`；
+    - L5 SC01 只看到 SC01；A17 即使直接請求或偽造 claimedScope 也被拒；所有被允許的請求都是該 Google UID；
+    - L6 重新整理後恢復；L7 更正 v6；L8 兩個分頁衝突；L9 同一操作重送；
+    - L10 登出時有尚未確認的操作；
+    - L11 換帳號（DOM 不殘留）；L12 帳號停用；L13 授權撤銷；
+    - 四種尺寸的版面。
+  - `npm run e2e`（測試情境）21/21；`npm test` 36/36；`npm run screens` 36/36；`npm run launcher:test` 4/4；LOGIN 情境的啟動與停止：`stack cleanup: CLEAN`。
+  - Mutation（各自獨立的目錄）：
+    - 拿掉帳號變更時的清除 → 3 項失敗；
+    - 拿掉操作的 UID 綁定 → L10 失敗；
+    - 拿掉 403 的重新檢查 → L12 失敗，L13 也停在等待。
+- **未執行**：
+  - **真實 Google 登入**：需要開發用 Firebase 專案與後端變更，見 SPEC §11.6；
+  - Windows 上的登入模式；
+  - Firefox、Safari；螢幕閱讀器。
+- **沿用**：Windows 單元測試 33/33（`c8e4fbd`，之後 `dev/` 有改；登入相關的新測試沒有在 Windows 執行）。
+
+### 待負責人決定與提供（SPEC §11.6～§11.7）
+
+- **L-1** 管理員與初始成員的授權方式。建議：負責人在自己電腦上以命令列寫入綁定，不提供網頁自助加入。
+- **L-2** 受控 API 在哪裡執行。建議：負責人的電腦，以 ADC 取得憑證，不存金鑰。
+- **L-3** 真實登入的 CSP 例外：`apis.google.com` 等。
+- **L-4** 開發用 Firebase 專案。需要提供：
+  - `projectId`、Web app 設定（`apiKey`、`authDomain`、`appId`：公開的識別資料）；
+  - 在 Console 啟用 Google provider；
+  - authorized domains 加入 `localhost`。
+  - **不要**提供密碼、服務帳戶私鑰或 client secret。
+- 上游的後端變更（驗證簽章 token、存取真實 Firestore、放寬只能 Emulator 的防護）會改動受保護檔案，需要負責人重新核准錨定；等 L-1、L-2 決定後再提出。
+
+## 前一批：W1 新版介面（PR #5，已合併 `7958af3`）
 
 ### 這次改了什麼（`web/`；送出規則沒有改）
 
@@ -282,3 +395,7 @@
 | 2026-11-27 | Claude | WEB5-REV-001 修正（`ce5734a`）：E2E 21/21、單元 33/33、截圖 36/36（Linux）；舊 app.js 的 2b 全部失敗 |
 | 2026-11-27 | ChatGPT → Claude | PR #5 R1（Reviewed Head `93e3837`）：審查通過，WEB5-REV-001 結案 |
 | 2026-11-27 | Claude | 只更新 HANDOFF；程式和 `93e3837` 相同；交負責人決定合併 |
+| 2026-11-28 | 負責人 → Claude | Firebase／Cloud Firestore 確定；新增 Google 登入；直接實作 |
+| 2026-11-28 | Claude | Google 登入（模擬，`f141bcc`）：e2e-login 15/15、E2E 21/21、單元 36/36；L3 PR；待決 L-1～L-4 |
+| 2026-11-28 | 負責人 → Claude | 直接實作 Firebase 實際模式（Firestore、Google 登入），不部署、不付費、不用真實資料 |
+| 2026-11-28 | Claude | 真實模式（`3e04316`）：npm test 75/75、e2e-login 17/17、firebase-mode 5/5、e2e 21/21；L3 PR；待負責人設定開發用專案 |

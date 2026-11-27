@@ -8,14 +8,18 @@
     "node": ">=22"
   },
   "scripts": {
-    "test": "node --test test/proxy.test.mjs test/stop.test.mjs test/leftovers.test.mjs",
+    "test": "node --test test/proxy.test.mjs test/stop.test.mjs test/leftovers.test.mjs test/server.test.mjs",
     "dev": "node dev/launcher.mjs",
     "e2e": "node test/run-e2e.mjs",
     "launcher:test": "node test/launcher-lifecycle.mjs",
     "leftovers": "node dev/leftovers.mjs",
-    "screens": "node test/run-e2e.mjs --script screens"
+    "screens": "node test/run-e2e.mjs --script screens",
+    "admin": "node server/admin.mjs",
+    "real": "node server/main.mjs"
   },
   "devDependencies": {
+    "esbuild": "0.28.2",
+    "firebase": "13.3.0",
     "playwright": "1.63.0"
   }
 }
