@@ -144,7 +144,8 @@ try {
     await loser.getByRole('button', { name: '重新讀取' }).click();
     await loser.waitForFunction(() => document.getElementById('p2Body').innerText.includes('v6'));
     await loser.waitForTimeout(500);
-    log(frontCommits(s).length === commitsBefore && await loser.locator('#reviseButton').isDisabled() && (await leaveText(loser)).includes('全天'),
+    const hint9 = await loser.locator('#reviseHint').innerText();
+    log(frontCommits(s).length === commitsBefore && await loser.locator('#reviseButton').isDisabled() && (await leaveText(loser)).includes('全天') && hint9.includes('已是全天'),
       'item 9: after a conflict the page re-reads (v6 全天) and sends NOTHING without a new confirmation', `commits ${commitsBefore}→${frontCommits(s).length}`);
     await a.ctx.close(); await b.ctx.close();
   }
@@ -196,13 +197,14 @@ try {
     fault.dropCommit = 1;
     await confirmRevision(page); await waitState(page, 'unknown');
     const unknownText = await page.locator('#statusRegion').innerText(); await recordLabel(page);
+    const unknownHint = await page.locator('#reviseHint').innerText(); const unknownFocus = await page.evaluate(() => document.activeElement?.id);
     await page.screenshot({ path: path.join(OUT, 'screens', 'state-unknown-1440.png'), fullPage: true });
     const opId = [...opIdsOf(s)][0];
     await page.getByRole('button', { name: '查詢結果' }).click(); await waitState(page, 'done');
     const doneText = await page.locator('#statusRegion').innerText();
     const docs = await state();
-    log(unknownText.includes('尚未確認') && !unknownText.includes('已更正') && doneText.includes(opId) && revisions(docs).length === 1 && opIdsOf(s).size === 1 && frontCommits(s).length === 1,
-      'item 5: response lost → 「尚未確認」 (not 完成/未修改) → 查詢結果 recovers the same receipt; one revision, one operationId', `opId=${opId} revisions=${revisions(docs).length} commits=${frontCommits(s).length}`);
+    log(unknownText.includes('尚未確認') && !unknownText.includes('已更正') && unknownHint.includes('尚未確認') && unknownFocus === 'p4Title' && doneText.includes(opId) && revisions(docs).length === 1 && opIdsOf(s).size === 1 && frontCommits(s).length === 1,
+      'item 5: response lost → 「尚未確認」 (not 完成/未修改), focus moved to the result, the button hint explains the lock → 查詢結果 recovers the same receipt; one revision, one operationId', `focus=${unknownFocus} hint="${unknownHint}" opId=${opId} revisions=${revisions(docs).length} commits=${frontCommits(s).length}`);
     await ctx.close();
   }
 
@@ -223,8 +225,9 @@ try {
       };
     });
     const allSame = Object.values(probes).every(([x, y]) => x.status === 403 && y.status === 403 && x.keys === 'code,traceId' && y.keys === x.keys && x.code === 'FORBIDDEN' && y.code === 'FORBIDDEN');
-    log(p1.includes('無法存取') && p2.includes('無法存取') && await page.locator('#reviseButton').isDisabled() && allSame && revisions(await state()).length === 0,
-      'item 6: S-DENY — P1/P2 show the generic 無法存取; every route used (session, summary, leave, commit, receipt) answers existing and nonexistent targets identically (403 {code, traceId})', JSON.stringify(Object.fromEntries(Object.entries(probes).map(([k, v]) => [k, v.map((x) => x.status)]))));
+    const denyUi = { dateHidden: await page.locator('#dateField').isHidden(), reviseBoxHidden: await page.locator('#reviseBox').isHidden() };
+    log(p1.includes('無法存取') && p2.includes('無法存取') && await page.locator('#reviseButton').isDisabled() && denyUi.dateHidden && denyUi.reviseBoxHidden && allSame && revisions(await state()).length === 0,
+      'item 6: S-DENY — P1/P2 show the generic 無法存取 (no date picker, no correction offered); every route used (session, summary, leave, commit, receipt) answers existing and nonexistent targets identically (403 {code, traceId})', JSON.stringify(Object.fromEntries(Object.entries(probes).map(([k, v]) => [k, v.map((x) => x.status)]))));
     await ctx.close();
   }
 
@@ -318,8 +321,9 @@ try {
     const ring = await page.evaluate(() => getComputedStyle(document.activeElement).outlineStyle);
     await page.keyboard.press('Enter'); await page.locator('#confirmDialog[open]').waitFor(); await page.keyboard.press('Enter');
     await waitState(page, 'done');
-    log(reached && f0 === 'confirmButton' && f1 === 'cancelButton' && f2 === 'confirmButton' && back === 'reviseButton' && ring !== 'none' && revisions(await state()).length === 1,
-      'keyboard: Tab reaches 更正為全天; dialog focus starts on 確認, Tab cycles 確認→返回→確認; Escape closes and focus returns; visible focus ring; Enter completes the revision', `focus=${f0}/${f1}/${f2} back=${back} outline=${ring}`);
+    const afterDone = await page.evaluate(() => document.activeElement?.id);
+    log(reached && afterDone === 'p4Title' && f0 === 'confirmButton' && f1 === 'cancelButton' && f2 === 'confirmButton' && back === 'reviseButton' && ring !== 'none' && revisions(await state()).length === 1,
+      'keyboard: Tab reaches 更正為全天; dialog focus starts on 確認, Tab cycles 確認→返回→確認; Escape closes and focus returns; visible focus ring; Enter completes the revision and focus moves to the result', `focus=${f0}/${f1}/${f2} back=${back} outline=${ring} afterDone=${afterDone}`);
     await ctx.close();
     const ctx2 = await browser.newContext({ reducedMotion: 'reduce' }); const p2 = await ctx2.newPage(); await p2.goto(s.url);
     const motion = await p2.evaluate(() => [...document.querySelectorAll('*')].every((n) => { const c = getComputedStyle(n); return c.animationName === 'none' && (c.transitionDuration === '0s' || c.transitionDuration.split(',').every((d) => parseFloat(d) === 0)); }));
