@@ -73,8 +73,8 @@
     const body = $('p2Body'); body.replaceChildren(el('p', { className: 'loading', textContent: '讀取中…' }));
     leave = null; leaveState = 'loading'; updateReviseButton();
     const r = await read('leaveRecord.read', { leaveRecordId: cfg.leave.leaveRecordId });
-    if (r.status === 403) { leaveState = 'denied'; updateReviseButton(); return body.replaceChildren(denial()); }
-    if (!isOk(r)) { leaveState = 'unavailable'; updateReviseButton(); return body.replaceChildren(unavailable(loadLeave)); }
+    if (r.status === 403) { leaveState = 'denied'; updateReviseButton(); body.replaceChildren(denial()); return refreshDoneText(); }
+    if (!isOk(r)) { leaveState = 'unavailable'; updateReviseButton(); body.replaceChildren(unavailable(loadLeave)); return refreshDoneText(); }
     leave = r.body.data; leaveState = 'ok';
     const segs = leave.coverageSegments || [];
     const part = segs.length === 1 ? (DAYPART[segs[0].dayPart] || segs[0].dayPart) : `${segs.length} 個時段`;
@@ -83,7 +83,10 @@
     for (const [k, v] of [['請假紀錄', leave.leaveRecordId], ['假別', leave.leaveTypeId], ['版本', `v${leave.version}`]]) dl.append(el('dt', { textContent: k }), el('dd', { textContent: v }));
     body.replaceChildren(now, dl);
     updateReviseButton();
+    refreshDoneText();
   }
+  /** the 'done' text describes the re-read as it actually is (WEB5-REV-001); the receipt itself stays valid */
+  function refreshDoneText() { if (state === 'done') render(); }
   const isAmOnly = () => !!leave && (leave.coverageSegments || []).length === 1 && leave.coverageSegments[0].dayPart === 'AM';
   const canRevise = () => isAmOnly() && op === null && state !== 'sending' && state !== 'conflict';
   /** After a conflict the shown record is outdated: drop it (so nothing can be frozen from it) and say so. Only a
@@ -164,16 +167,20 @@
     if (r.status === 200 && r.body && r.body.code === 'OK' && r.body.receipt && r.body.receipt.operationId === op.operationId) return finishDone(r.body.receipt);
     state = prev; note = '查詢沒有取得結果（無法存取或暫時無法連線），送出結果仍未確認。'; render();
   }
-  function finishDone(receipt) { lastReceipt = receipt; op = null; state = 'done'; render(); loadLeave(); }
+  function finishDone(receipt) { lastReceipt = receipt; op = null; state = 'done'; leaveState = 'loading'; render(); loadLeave(); }
 
   /* ---------------- P4 status rendering (DESIGN §4): label + title + what it means + the safe next step */
   const RESULT = {
     sending: { tag: ['tag-sending', '處理中'], title: '正在送出', text: '請稍候，不要關閉這個頁面。' },
-    done: { tag: ['tag-done', '完成'], title: () => `已更正為全天（版本 v${lastReceipt.currentVersion}）`, text: '請假紀錄已重新讀取，顯示的是最新內容。點名狀態沒有改變。' },
+    // the receipt proves the correction; the text about the leave record follows the re-read that comes after it
+    done: { tag: ['tag-done', '完成'], title: () => `已更正為全天（版本 v${lastReceipt.currentVersion}）`, text: () => ({
+      loading: '這次請假更正已完成。正在重新讀取請假紀錄…',
+      ok: '這次請假更正已完成；上方的請假紀錄已重新讀取，是最新內容。點名狀態沒有改變。',
+    }[leaveState] || '這次請假更正已完成（見下方收據），但重新讀取請假紀錄沒有成功，上方顯示的不是最新內容。點名狀態沒有改變。') },
     conflict: { tag: ['tag-conflict', '衝突'], title: '資料已被其他裝置更新', text: '這次的更正沒有寫入。請按「重新讀取」看最新內容，再決定是否需要更正。' },
     unknown: { tag: ['tag-unknown', '尚未確認'], title: '送出結果尚未確認', text: '修改可能已經完成，也可能沒有完成。請先按「查詢結果」；查不到時，可以「重新送出同一操作」——它用的是同一個操作編號，不會重複修改。' },
     unknownDenied: { tag: ['tag-unknown', '尚未確認'], title: '先前的送出結果尚未確認，目前無法存取', text: '結果仍然不明，這個頁面現在無法再查詢。開發情境中請停止後重新啟動（重新啟動會回到初始的測試資料）。' },
-    denied: { tag: ['tag-denied', '無法存取'], title: '無法存取', text: '沒有送出任何修改。' },
+    denied: { tag: ['tag-denied', '無法存取'], title: '無法存取', text: '這次更正未獲允許，沒有修改資料。' },
     invalid: { tag: ['tag-denied', '未修改'], title: '內容不符合規定', text: '沒有修改。' },
     error: { tag: ['tag-error', '錯誤'], title: '同一操作的內容不一致', text: '頁面不會自動重試；送出結果尚未確認。請按「查詢結果」。' },
   };
@@ -196,7 +203,7 @@
     const R = RESULT[state];
     card.hidden = false; card.dataset.state = state;
     const head = el('p', { className: 'result-head' }, el('span', { className: `tag ${R.tag[0]}`, textContent: R.tag[1] }), el('strong', { className: 'result-title', textContent: typeof R.title === 'function' ? R.title() : R.title }));
-    const kids = [head, el('p', { className: 'result-text', textContent: R.text })];
+    const kids = [head, el('p', { className: 'result-text', textContent: typeof R.text === 'function' ? R.text() : R.text })];
     if (note) kids.push(el('p', { className: 'result-note', textContent: note }));
     if (op) kids.push(el('p', { className: 'receipt', textContent: `操作編號：${op.operationId}` }));
     else if (state === 'done' && lastReceipt) kids.push(el('p', { className: 'receipt', textContent: `收據：${lastReceipt.operationId}` }));

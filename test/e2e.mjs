@@ -24,11 +24,19 @@ const up = await openUpstream(process.env.CMN_UPSTREAM_STAGE2);
 const results = []; const log = (ok, name, detail = '') => { results.push({ name, ok, detail }); console.log(`${ok ? 'OK  ' : 'FAIL'} ${name}${detail ? ' — ' + detail : ''}`); };
 
 /* ---------------- test-only fault proxy: web proxy → [fault] → upstream front proxy */
-const fault = { dropCommit: 0, receipt: null, read: null, seen: [] };
+const fault = { dropCommit: 0, receipt: null, read: null, afterCommit: null, committed: false, seen: [] };
 const faultServer = http.createServer((req, res) => {
   const chunks = []; req.on('data', (c) => chunks.push(c));
   req.on('end', async () => {
     fault.seen.push(req.url);
+    // WEB5-REV-001: after a commit went through, the re-read of the leave record is delayed / fails / is refused
+    if (req.url === '/v1/read' && fault.afterCommit && fault.committed) {
+      if (fault.afterCommit === 'delay') await new Promise((r) => setTimeout(r, 2500));
+      else {
+        const [status, code] = fault.afterCommit === '403' ? [403, 'FORBIDDEN'] : [503, 'UNAVAILABLE'];
+        res.writeHead(status, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ code, traceId: 'TR-injected-by-test' }));
+      }
+    }
     if (req.url === '/v1/read' && fault.read) {
       const [status, code] = fault.read === '403' ? [403, 'FORBIDDEN'] : [503, 'UNAVAILABLE'];
       res.writeHead(status, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ code, traceId: 'TR-injected-by-test' }));
@@ -41,6 +49,7 @@ const faultServer = http.createServer((req, res) => {
     try {
       const r = await fetch(`http://127.0.0.1:${up.PORTS.front}${req.url}`, { method: req.method, headers: { 'content-type': req.headers['content-type'] || 'application/json', authorization: req.headers.authorization || '' }, body: Buffer.concat(chunks) });
       const text = await r.text();
+      if (req.url === '/v1/commit' && r.status === 200) fault.committed = true;
       if (req.url === '/v1/commit' && fault.dropCommit > 0) { fault.dropCommit -= 1; return req.socket.destroy(); }   // committed upstream, response lost
       res.writeHead(r.status, { 'content-type': 'application/json' }); res.end(text);
     } catch { req.socket.destroy(); }
@@ -52,7 +61,7 @@ const browser = await chromium.launch();
 let current = null;
 async function scenario(name, { viaFault = false } = {}) {
   if (current) await current.stop();
-  fault.dropCommit = 0; fault.receipt = null; fault.read = null; fault.seen = [];
+  fault.dropCommit = 0; fault.receipt = null; fault.read = null; fault.afterCommit = null; fault.committed = false; fault.seen = [];
   current = await startScenario(up, { scenario: name, webPort: WEB_PORT, upstreamOverride: viaFault ? `http://127.0.0.1:${FAULT_PORT}` : null });
   return current;
 }
@@ -126,6 +135,39 @@ try {
     const after = await state(); const t1 = await leaveText(page);
     log(t0.includes('上午') && t0.includes('v5') && t1.includes('全天') && t1.includes('v6') && revisions(after).length === 1 && JSON.stringify(entryOf(before)) === JSON.stringify(entryOf(after)) && entryOf(after)?.status === 'N',
       'item 2: AM→全天 succeeds at v6 from the reset initial state; attendance N unchanged', `before="${t0.replace(/\s+/g, ' ')}" after="${t1.replace(/\s+/g, ' ')}" revisions=${revisions(after).length}`);
+    await ctx.close();
+  }
+
+  /* ---------- item 2b (WEB5-REV-001): the 完成 text follows the re-read that comes after the receipt — while it is
+     slow, after it fails (503) and after it is refused (403); the receipt stays, nothing is re-sent */
+  for (const mode of ['delay', '503', '403']) {
+    const s = await scenario('S-LEAVE-SC01', { viaFault: true }); const { ctx, page } = await openPage(s); await waitLeaveLoaded(page);
+    fault.afterCommit = mode;
+    await confirmRevision(page); await waitState(page, 'done');
+    const resultText = () => page.locator('#statusRegion').innerText();
+    let during = null; let after = null; let retried = null;
+    if (mode === 'delay') {
+      during = await resultText();
+      await page.waitForFunction(() => document.getElementById('p2Body').innerText.includes('v6'));
+      after = await resultText();
+    } else {
+      await page.waitForFunction((m) => document.getElementById('p2Body').innerText.includes(m === '403' ? '無法存取' : '目前無法讀取'), mode);
+      after = await resultText();
+      if (mode === '503') {
+        fault.afterCommit = null;
+        await page.getByRole('button', { name: '重試' }).click();
+        await page.waitForFunction(() => document.getElementById('p2Body').innerText.includes('v6'));
+        retried = await resultText();
+      }
+    }
+    const opId = [...opIdsOf(s)][0]; const docs = await state();
+    const tag = await page.locator('#statusRegion .tag').first().innerText();
+    const okText = mode === 'delay'
+      ? during.includes('正在重新讀取') && !during.includes('已重新讀取，是最新內容') && after.includes('已重新讀取，是最新內容')
+      : after.includes('重新讀取請假紀錄沒有成功') && !after.includes('已重新讀取，是最新內容') && (mode !== '503' || retried.includes('已重新讀取，是最新內容'));
+    log(okText && tag === '完成' && (await statusOf(page)) === 'done' && after.includes(opId) && frontCommits(s).length === 1 && opIdsOf(s).size === 1 && revisions(docs).length === 1,
+      `item 2b: after the receipt, the leave re-read ${mode === 'delay' ? 'is slow → 「正在重新讀取」, then 「已重新讀取，是最新內容」' : mode === '503' ? 'fails (503) → 完成 stays, text says the re-read failed; 重試 → 「已重新讀取」' : 'is refused (403) → 完成 stays, text says the re-read failed'}; receipt kept, one commit, one operationId, one revision`,
+      `during="${(during || '').replace(/\s+/g, ' ').slice(0, 60)}" after="${after.replace(/\s+/g, ' ').slice(0, 90)}" commits=${frontCommits(s).length} opIds=${opIdsOf(s).size}`);
     await ctx.close();
   }
 
