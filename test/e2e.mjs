@@ -24,11 +24,19 @@ const up = await openUpstream(process.env.CMN_UPSTREAM_STAGE2);
 const results = []; const log = (ok, name, detail = '') => { results.push({ name, ok, detail }); console.log(`${ok ? 'OK  ' : 'FAIL'} ${name}${detail ? ' — ' + detail : ''}`); };
 
 /* ---------------- test-only fault proxy: web proxy → [fault] → upstream front proxy */
-const fault = { dropCommit: 0, receipt: null, read: null, seen: [] };
+const fault = { dropCommit: 0, receipt: null, read: null, afterCommit: null, committed: false, seen: [] };
 const faultServer = http.createServer((req, res) => {
   const chunks = []; req.on('data', (c) => chunks.push(c));
   req.on('end', async () => {
     fault.seen.push(req.url);
+    // WEB5-REV-001: after a commit went through, the re-read of the leave record is delayed / fails / is refused
+    if (req.url === '/v1/read' && fault.afterCommit && fault.committed) {
+      if (fault.afterCommit === 'delay') await new Promise((r) => setTimeout(r, 2500));
+      else {
+        const [status, code] = fault.afterCommit === '403' ? [403, 'FORBIDDEN'] : [503, 'UNAVAILABLE'];
+        res.writeHead(status, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ code, traceId: 'TR-injected-by-test' }));
+      }
+    }
     if (req.url === '/v1/read' && fault.read) {
       const [status, code] = fault.read === '403' ? [403, 'FORBIDDEN'] : [503, 'UNAVAILABLE'];
       res.writeHead(status, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ code, traceId: 'TR-injected-by-test' }));
@@ -41,6 +49,7 @@ const faultServer = http.createServer((req, res) => {
     try {
       const r = await fetch(`http://127.0.0.1:${up.PORTS.front}${req.url}`, { method: req.method, headers: { 'content-type': req.headers['content-type'] || 'application/json', authorization: req.headers.authorization || '' }, body: Buffer.concat(chunks) });
       const text = await r.text();
+      if (req.url === '/v1/commit' && r.status === 200) fault.committed = true;
       if (req.url === '/v1/commit' && fault.dropCommit > 0) { fault.dropCommit -= 1; return req.socket.destroy(); }   // committed upstream, response lost
       res.writeHead(r.status, { 'content-type': 'application/json' }); res.end(text);
     } catch { req.socket.destroy(); }
@@ -52,7 +61,7 @@ const browser = await chromium.launch();
 let current = null;
 async function scenario(name, { viaFault = false } = {}) {
   if (current) await current.stop();
-  fault.dropCommit = 0; fault.receipt = null; fault.read = null; fault.seen = [];
+  fault.dropCommit = 0; fault.receipt = null; fault.read = null; fault.afterCommit = null; fault.committed = false; fault.seen = [];
   current = await startScenario(up, { scenario: name, webPort: WEB_PORT, upstreamOverride: viaFault ? `http://127.0.0.1:${FAULT_PORT}` : null });
   return current;
 }
@@ -129,6 +138,39 @@ try {
     await ctx.close();
   }
 
+  /* ---------- item 2b (WEB5-REV-001): the 完成 text follows the re-read that comes after the receipt — while it is
+     slow, after it fails (503) and after it is refused (403); the receipt stays, nothing is re-sent */
+  for (const mode of ['delay', '503', '403']) {
+    const s = await scenario('S-LEAVE-SC01', { viaFault: true }); const { ctx, page } = await openPage(s); await waitLeaveLoaded(page);
+    fault.afterCommit = mode;
+    await confirmRevision(page); await waitState(page, 'done');
+    const resultText = () => page.locator('#statusRegion').innerText();
+    let during = null; let after = null; let retried = null;
+    if (mode === 'delay') {
+      during = await resultText();
+      await page.waitForFunction(() => document.getElementById('p2Body').innerText.includes('v6'));
+      after = await resultText();
+    } else {
+      await page.waitForFunction((m) => document.getElementById('p2Body').innerText.includes(m === '403' ? '無法存取' : '目前無法讀取'), mode);
+      after = await resultText();
+      if (mode === '503') {
+        fault.afterCommit = null;
+        await page.getByRole('button', { name: '重試' }).click();
+        await page.waitForFunction(() => document.getElementById('p2Body').innerText.includes('v6'));
+        retried = await resultText();
+      }
+    }
+    const opId = [...opIdsOf(s)][0]; const docs = await state();
+    const tag = await page.locator('#statusRegion .tag').first().innerText();
+    const okText = mode === 'delay'
+      ? during.includes('正在重新讀取') && !during.includes('已重新讀取，是最新內容') && after.includes('已重新讀取，是最新內容')
+      : after.includes('重新讀取請假紀錄沒有成功') && !after.includes('已重新讀取，是最新內容') && (mode !== '503' || retried.includes('已重新讀取，是最新內容'));
+    log(okText && tag === '完成' && (await statusOf(page)) === 'done' && after.includes(opId) && frontCommits(s).length === 1 && opIdsOf(s).size === 1 && revisions(docs).length === 1,
+      `item 2b: after the receipt, the leave re-read ${mode === 'delay' ? 'is slow → 「正在重新讀取」, then 「已重新讀取，是最新內容」' : mode === '503' ? 'fails (503) → 完成 stays, text says the re-read failed; 重試 → 「已重新讀取」' : 'is refused (403) → 完成 stays, text says the re-read failed'}; receipt kept, one commit, one operationId, one revision`,
+      `during="${(during || '').replace(/\s+/g, ' ').slice(0, 60)}" after="${after.replace(/\s+/g, ' ').slice(0, 90)}" commits=${frontCommits(s).length} opIds=${opIdsOf(s).size}`);
+    await ctx.close();
+  }
+
   /* ---------- item 3 + 9: two tabs at once → one done, one conflict; after conflict nothing is sent without re-confirmation */
   {
     const s = await scenario('S-LEAVE-SC01'); const a = await openPage(s); const b = await openPage(s); await waitLeaveLoaded(a.page); await waitLeaveLoaded(b.page);
@@ -144,7 +186,8 @@ try {
     await loser.getByRole('button', { name: '重新讀取' }).click();
     await loser.waitForFunction(() => document.getElementById('p2Body').innerText.includes('v6'));
     await loser.waitForTimeout(500);
-    log(frontCommits(s).length === commitsBefore && await loser.locator('#reviseButton').isDisabled() && (await leaveText(loser)).includes('全天'),
+    const hint9 = await loser.locator('#reviseHint').innerText();
+    log(frontCommits(s).length === commitsBefore && await loser.locator('#reviseButton').isDisabled() && (await leaveText(loser)).includes('全天') && hint9.includes('已是全天'),
       'item 9: after a conflict the page re-reads (v6 全天) and sends NOTHING without a new confirmation', `commits ${commitsBefore}→${frontCommits(s).length}`);
     await a.ctx.close(); await b.ctx.close();
   }
@@ -196,13 +239,14 @@ try {
     fault.dropCommit = 1;
     await confirmRevision(page); await waitState(page, 'unknown');
     const unknownText = await page.locator('#statusRegion').innerText(); await recordLabel(page);
+    const unknownHint = await page.locator('#reviseHint').innerText(); const unknownFocus = await page.evaluate(() => document.activeElement?.id);
     await page.screenshot({ path: path.join(OUT, 'screens', 'state-unknown-1440.png'), fullPage: true });
     const opId = [...opIdsOf(s)][0];
     await page.getByRole('button', { name: '查詢結果' }).click(); await waitState(page, 'done');
     const doneText = await page.locator('#statusRegion').innerText();
     const docs = await state();
-    log(unknownText.includes('尚未確認') && !unknownText.includes('已更正') && doneText.includes(opId) && revisions(docs).length === 1 && opIdsOf(s).size === 1 && frontCommits(s).length === 1,
-      'item 5: response lost → 「尚未確認」 (not 完成/未修改) → 查詢結果 recovers the same receipt; one revision, one operationId', `opId=${opId} revisions=${revisions(docs).length} commits=${frontCommits(s).length}`);
+    log(unknownText.includes('尚未確認') && !unknownText.includes('已更正') && unknownHint.includes('尚未確認') && unknownFocus === 'p4Title' && doneText.includes(opId) && revisions(docs).length === 1 && opIdsOf(s).size === 1 && frontCommits(s).length === 1,
+      'item 5: response lost → 「尚未確認」 (not 完成/未修改), focus moved to the result, the button hint explains the lock → 查詢結果 recovers the same receipt; one revision, one operationId', `focus=${unknownFocus} hint="${unknownHint}" opId=${opId} revisions=${revisions(docs).length} commits=${frontCommits(s).length}`);
     await ctx.close();
   }
 
@@ -223,8 +267,9 @@ try {
       };
     });
     const allSame = Object.values(probes).every(([x, y]) => x.status === 403 && y.status === 403 && x.keys === 'code,traceId' && y.keys === x.keys && x.code === 'FORBIDDEN' && y.code === 'FORBIDDEN');
-    log(p1.includes('無法存取') && p2.includes('無法存取') && await page.locator('#reviseButton').isDisabled() && allSame && revisions(await state()).length === 0,
-      'item 6: S-DENY — P1/P2 show the generic 無法存取; every route used (session, summary, leave, commit, receipt) answers existing and nonexistent targets identically (403 {code, traceId})', JSON.stringify(Object.fromEntries(Object.entries(probes).map(([k, v]) => [k, v.map((x) => x.status)]))));
+    const denyUi = { dateHidden: await page.locator('#dateField').isHidden(), reviseBoxHidden: await page.locator('#reviseBox').isHidden() };
+    log(p1.includes('無法存取') && p2.includes('無法存取') && await page.locator('#reviseButton').isDisabled() && denyUi.dateHidden && denyUi.reviseBoxHidden && allSame && revisions(await state()).length === 0,
+      'item 6: S-DENY — P1/P2 show the generic 無法存取 (no date picker, no correction offered); every route used (session, summary, leave, commit, receipt) answers existing and nonexistent targets identically (403 {code, traceId})', JSON.stringify(Object.fromEntries(Object.entries(probes).map(([k, v]) => [k, v.map((x) => x.status)]))));
     await ctx.close();
   }
 
@@ -318,8 +363,9 @@ try {
     const ring = await page.evaluate(() => getComputedStyle(document.activeElement).outlineStyle);
     await page.keyboard.press('Enter'); await page.locator('#confirmDialog[open]').waitFor(); await page.keyboard.press('Enter');
     await waitState(page, 'done');
-    log(reached && f0 === 'confirmButton' && f1 === 'cancelButton' && f2 === 'confirmButton' && back === 'reviseButton' && ring !== 'none' && revisions(await state()).length === 1,
-      'keyboard: Tab reaches 更正為全天; dialog focus starts on 確認, Tab cycles 確認→返回→確認; Escape closes and focus returns; visible focus ring; Enter completes the revision', `focus=${f0}/${f1}/${f2} back=${back} outline=${ring}`);
+    const afterDone = await page.evaluate(() => document.activeElement?.id);
+    log(reached && afterDone === 'p4Title' && f0 === 'confirmButton' && f1 === 'cancelButton' && f2 === 'confirmButton' && back === 'reviseButton' && ring !== 'none' && revisions(await state()).length === 1,
+      'keyboard: Tab reaches 更正為全天; dialog focus starts on 確認, Tab cycles 確認→返回→確認; Escape closes and focus returns; visible focus ring; Enter completes the revision and focus moves to the result', `focus=${f0}/${f1}/${f2} back=${back} outline=${ring} afterDone=${afterDone}`);
     await ctx.close();
     const ctx2 = await browser.newContext({ reducedMotion: 'reduce' }); const p2 = await ctx2.newPage(); await p2.goto(s.url);
     const motion = await p2.evaluate(() => [...document.querySelectorAll('*')].every((n) => { const c = getComputedStyle(n); return c.animationName === 'none' && (c.transitionDuration === '0s' || c.transitionDuration.split(',').every((d) => parseFloat(d) === 0)); }));

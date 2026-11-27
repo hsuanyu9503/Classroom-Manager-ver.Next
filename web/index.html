@@ -3,44 +3,73 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Classroom Manager ver.Next｜W1</title>
+  <title>Classroom Manager ver.Next｜點名與請假（W1 開發版）</title>
   <link rel="stylesheet" href="/tokens.css">
   <link rel="stylesheet" href="/style.css">
   <script src="/app.js" defer></script>
 </head>
 <body>
+  <a class="skip-link" href="#main">跳到主要內容</a>
   <header class="site-header">
-    <h1>Classroom Manager ver.Next</h1>
+    <div class="brand">
+      <h1>Classroom Manager <span class="brand-sub">ver.Next</span></h1>
+      <p class="site-sub">點名與請假｜W1 開發版</p>
+    </div>
     <p class="scenario-banner" id="scenarioBanner" role="note">測試情境：讀取中…｜虛構資料｜暫定色票</p>
   </header>
-  <main class="container">
-    <section class="card" aria-labelledby="p1Title" id="p1">
-      <h2 id="p1Title">點名名冊與點名摘要</h2>
-      <label class="field">日期
-        <select id="sessionSelect" aria-describedby="sessionHint"></select>
-      </label>
-      <p class="muted" id="sessionHint">只能選固定測資中已有的點名場次。</p>
+
+  <main id="main" class="layout" tabindex="-1">
+    <section class="card roster-card" aria-labelledby="p1Title" id="p1">
+      <div class="card-head">
+        <h2 id="p1Title">點名名冊</h2>
+        <label class="date-field" id="dateField">點名日期
+          <select id="sessionSelect"></select>
+        </label>
+      </div>
       <div id="p1Body" aria-live="polite"></div>
     </section>
 
-    <section class="card" aria-labelledby="p2Title" id="p2" hidden>
-      <h2 id="p2Title">請假摘要</h2>
-      <div id="p2Body" aria-live="polite"></div>
-      <div class="actions">
-        <button type="button" class="primary" id="reviseButton" disabled>更正為全天</button>
-      </div>
-    </section>
+    <div class="side" id="side">
+      <section class="card leave-card" aria-labelledby="p2Title" id="p2" hidden>
+        <h2 id="p2Title">請假紀錄</h2>
+        <div id="p2Body" aria-live="polite"></div>
+        <div class="revise-box" id="reviseBox" hidden>
+          <p class="hint" id="reviseHint"></p>
+          <button type="button" class="primary" id="reviseButton" disabled aria-describedby="reviseHint">更正為全天</button>
+        </div>
+      </section>
 
-    <section class="card status-card" id="p4" aria-labelledby="p4Title" hidden>
-      <h2 id="p4Title">送出結果</h2>
-      <div id="statusRegion" role="status" aria-live="polite"></div>
-      <div class="actions" id="statusActions"></div>
-    </section>
+      <section class="card status-card" id="p4" aria-labelledby="p4Title" hidden>
+        <h2 id="p4Title" tabindex="-1">送出結果</h2>
+        <div id="statusRegion" role="status" aria-live="polite"></div>
+        <div class="actions" id="statusActions"></div>
+      </section>
+    </div>
+
+    <footer class="dev-info">
+      <details>
+        <summary>關於這個開發版</summary>
+        <ul id="devInfo">
+          <li>只使用<strong>虛構</strong>的測試資料，只連這台電腦上的 Firebase Emulator，不會部署到網路上。</li>
+          <li>每次啟動只有一個測試情境；要換情境或回到初始資料，請停止後重新啟動。</li>
+          <li>受控 API 目前不提供姓名，所以名冊只顯示座號。</li>
+          <li>點名狀態 P／R／N／U 與假別（例如 SICK-LEAVE）的中文名稱尚未決定，暫時顯示代碼。</li>
+          <li>日期只能選測試資料中已有的點名場次。</li>
+          <li>色彩是<strong>暫定色票</strong>，尚未經負責人核准。</li>
+          <li id="devScope">班級：讀取中…</li>
+        </ul>
+      </details>
+    </footer>
   </main>
 
-  <dialog id="confirmDialog" aria-labelledby="confirmTitle">
-    <h2 id="confirmTitle">確認更正</h2>
-    <p id="confirmText"></p>
+  <dialog id="confirmDialog" aria-labelledby="confirmTitle" aria-describedby="confirmText">
+    <h2 id="confirmTitle">確認更正請假時段</h2>
+    <dl class="confirm-diff">
+      <dt>請假紀錄</dt><dd id="confirmRecord"></dd>
+      <dt>涵蓋時段</dt><dd><span class="daypart daypart-before">上午</span><span class="arrow" aria-hidden="true">→</span><span class="daypart daypart-after">全天</span></dd>
+      <dt>目前版本</dt><dd id="confirmVersion"></dd>
+    </dl>
+    <p id="confirmText" class="hint"></p>
     <div class="actions">
       <button type="button" class="primary" id="confirmButton">確認更正</button>
       <button type="button" id="cancelButton">返回</button>

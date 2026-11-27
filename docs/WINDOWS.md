@@ -38,11 +38,10 @@ npm ci
 cd C:\cmn
 git clone https://github.com/hsuanyu9503/Classroom-Manager-ver.Next.git
 cd Classroom-Manager-ver.Next
-git checkout claude/w1-windows-launcher
 npm ci
 ```
 
-- `git checkout claude/w1-windows-launcher`：PR #3 合併**之前**一定要切到這個分支；`main` 上的舊版啟動器在 Windows 會直接拒絕。合併之後就不需要這一行。
+- 使用 `main` 即可：Windows 版的啟動器已經在 PR #3 合併（`ba1909f`）。先前切到 `claude/w1-windows-launcher` 的人，執行 `git checkout main` 再 `git pull`。
 
 - 上游一定要在固定版本 `1e20989`，`poc/stage2` 不能有修改，否則啟動器會拒絕（REFUSED）。
 - 第一次啟動 Emulator 時，firebase-tools 會下載 Emulator 的檔案；Windows 防火牆如果詢問，只允許「私人網路」即可（只用 127.0.0.1）。
